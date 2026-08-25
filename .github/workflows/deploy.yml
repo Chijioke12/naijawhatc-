@@ -7,9 +7,9 @@ on:
       - master
   workflow_dispatch:
 
-# Permissions required for GitHub Pages deployment
+# Permissions required for GitHub Pages deployment and committing binary back to repository
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -68,6 +68,13 @@ jobs:
           mkdir -p dist
           cp public/whot_engine_asm.js dist/ || true
           ls -lh dist/
+
+      - name: Commit and Push compiled asm.js back to repository
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/whot_engine_asm.js
+          git diff --quiet && git diff --staged --quiet || (git commit -m "build: compile and update public/whot_engine_asm.js [skip ci]" && git push)
 
       - name: Upload GitHub Pages Artifact
         uses: actions/upload-pages-artifact@v3
