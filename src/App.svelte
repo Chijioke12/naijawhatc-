@@ -1,144 +1,105 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { CppWhotGameEngine, suitToSymbol, type Card, type Suit, type GameStateJSON } from './cppEngine';
-  import { CPP_SOURCE_FILES, type CppFile } from './cppSourceCode';
+  import { getCardImage, getCardBackImage, getSuitIcon } from './assetManager';
+  import { playSound, setSoundMuted } from './soundManager';
 
-  // Active view tab: 'game' | 'kaios' | 'code' | 'terminal' | 'settings'
-  let activeTab: 'game' | 'kaios' | 'code' | 'terminal' | 'settings' = 'game';
-  let kaiosSelectedCardIndex = 0;
+  // Screen View State: 'MAIN_MENU' | 'GAME' | 'HOW_TO_PLAY' | 'SETTINGS'
+  let currentScreen: 'MAIN_MENU' | 'GAME' | 'HOW_TO_PLAY' | 'SETTINGS' = 'MAIN_MENU';
 
-  function handleKeyDown(event: KeyboardEvent) {
-    if (activeTab !== 'kaios') return;
-    if (event.key === 'ArrowLeft') {
-      kaiosSelectedCardIndex = Math.max(0, kaiosSelectedCardIndex - 1);
-    } else if (event.key === 'ArrowRight') {
-      kaiosSelectedCardIndex = Math.min(Math.max(0, gameState.human.hand.length - 1), kaiosSelectedCardIndex + 1);
-    } else if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowUp') {
-      handlePlayCard(kaiosSelectedCardIndex);
-    } else if (event.key === 'ArrowDown' || event.key === 'd' || event.key === '0') {
-      handleDrawMarket();
-    } else if (showWhotSuitModal) {
-      if (event.key === '1') handleSelectWhotSuit('circle');
-      if (event.key === '2') handleSelectWhotSuit('triangle');
-      if (event.key === '3') handleSelectWhotSuit('cross');
-      if (event.key === '4') handleSelectWhotSuit('square');
-      if (event.key === '5') handleSelectWhotSuit('star');
-    }
-  }
+  // Main Menu State
+  let menuSelectedIndex = 0; // 0: Play Game, 1: How to Play, 2: Settings
+  const menuOptions = ['PLAY GAME', 'HOW TO PLAY', 'SETTINGS'];
 
-  // Game Engine instance
-  let engine = new CppWhotGameEngine();
-  let gameState: GameStateJSON = engine.getStateJSON();
-
-  // Selected WHOT suit modal
-  let showWhotSuitModal = false;
-  let selectedWhotCardIndex = -1;
-
-  // Code Explorer state
-  let selectedFileIndex = 0;
-  let currentFile: CppFile = CPP_SOURCE_FILES[0];
-
-  // Terminal state
-  let terminalLogs: string[] = [];
-  let isCompilingCpp = false;
-  let compilerOutput = '';
-
-  // Settings
+  // Settings State
+  let settingsSelectedIndex = 0;
   let settings = {
     sfx: true,
-    aiBanter: true,
-    whotCard: true,
     pick3: true,
     suspend: true,
     emptyMarketEnds: false
   };
 
-  // Sound effects
-  function playSound(type: 'play' | 'draw' | 'whot' | 'win' | 'click') {
-    if (!settings.sfx) return;
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
+  // Game Engine State
+  let engine = new CppWhotGameEngine({
+    sfx: settings.sfx,
+    pick3: settings.pick3,
+    suspend: settings.suspend,
+    emptyMarketEnds: settings.emptyMarketEnds
+  });
+  let gameState: GameStateJSON = engine.getStateJSON();
 
-      const now = ctx.currentTime;
-      if (type === 'play') {
-        osc.frequency.setValueAtTime(440, now);
-        osc.frequency.exponentialRampToValueAtTime(880, now + 0.1);
-        gain.gain.setValueAtTime(0.15, now);
-        gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
-        osc.start(now);
-        osc.stop(now + 0.1);
-      } else if (type === 'draw') {
-        osc.frequency.setValueAtTime(300, now);
-        osc.frequency.exponentialRampToValueAtTime(200, now + 0.12);
-        gain.gain.setValueAtTime(0.12, now);
-        gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
-        osc.start(now);
-        osc.stop(now + 0.12);
-      } else if (type === 'whot') {
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(523.25, now);
-        osc.frequency.setValueAtTime(659.25, now + 0.08);
-        osc.frequency.setValueAtTime(783.99, now + 0.16);
-        gain.gain.setValueAtTime(0.2, now);
-        gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
-        osc.start(now);
-        osc.stop(now + 0.25);
-      } else if (type === 'win') {
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(523.25, now);
-        osc.frequency.setValueAtTime(659.25, now + 0.12);
-        osc.frequency.setValueAtTime(783.99, now + 0.24);
-        osc.frequency.setValueAtTime(1046.5, now + 0.36);
-        gain.gain.setValueAtTime(0.25, now);
-        gain.gain.linearRampToValueAtTime(0.01, now + 0.5);
-        osc.start(now);
-        osc.stop(now + 0.5);
-      } else {
-        osc.frequency.setValueAtTime(600, now);
-        gain.gain.setValueAtTime(0.05, now);
-        gain.gain.linearRampToValueAtTime(0.01, now + 0.05);
-        osc.start(now);
-        osc.stop(now + 0.05);
-      }
-    } catch (e) {
-      // Ignore audio errors
-    }
-  }
+  // In-Game Selection & Modals
+  // kaiosSelectedCardIndex: -1 means Market Deck focused; 0..hand.length-1 means hand card focused
+  let kaiosSelectedCardIndex = 0;
+  let showWhotSuitModal = false;
+  let selectedWhotCardIndex = -1;
+  let whotSuitSelectedIndex = 0;
+  const suitsList: Suit[] = ['circle', 'triangle', 'cross', 'square', 'star'];
 
   function updateState() {
     gameState = engine.getStateJSON();
+    // Keep focus within bounds
+    if (gameState.human.hand.length === 0) {
+      kaiosSelectedCardIndex = -1;
+    } else if (kaiosSelectedCardIndex >= gameState.human.hand.length) {
+      kaiosSelectedCardIndex = gameState.human.hand.length - 1;
+    }
   }
 
   function handleStartNewGame() {
-    playSound('click');
-    engine = new CppWhotGameEngine(settings);
+    playSound('sfx_card_deal');
+    engine = new CppWhotGameEngine({
+      sfx: settings.sfx,
+      pick3: settings.pick3,
+      suspend: settings.suspend,
+      emptyMarketEnds: settings.emptyMarketEnds
+    });
     updateState();
-    appendTerminalLog(`[C++ Engine] resetAndShuffle() called. Dealt 6 cards to You and Bot.`);
+    kaiosSelectedCardIndex = 0;
+    currentScreen = 'GAME';
   }
 
   function handlePlayCard(index: number) {
     if (gameState.currentTurnPlayerIndex !== 0 || gameState.isGameOver) return;
+    if (index < 0 || index >= gameState.human.hand.length) return;
+
     const card = gameState.human.hand[index];
     if (!card) return;
 
-    if (card.suit === 'whot') {
+    if (card.suit === 'whot' || card.number === 20) {
       selectedWhotCardIndex = index;
+      whotSuitSelectedIndex = 0;
       showWhotSuitModal = true;
-      playSound('click');
+      playSound('sfx_whot_played');
       return;
     }
 
+    const num = card.number;
     const res = engine.humanPlayCard(index);
-    playSound(res.success ? 'play' : 'click');
-    updateState();
-    appendTerminalLog(`[C++ Player] Played card #${index}: ${card.suit} ${card.number}`);
+    if (res.success) {
+      // Play specific sound effects for special cards
+      if (num === 1) playSound('sfx_hold_on');
+      else if (num === 2) playSound('sfx_pick_two');
+      else if (num === 5 && settings.pick3) playSound('sfx_pick_three');
+      else if (num === 8 && settings.suspend) playSound('sfx_suspension');
+      else if (num === 14) playSound('sfx_gen_market');
+      else playSound('sfx_card_play');
 
-    if (res.success && gameState.currentTurnPlayerIndex === 1 && !gameState.isGameOver) {
-      setTimeout(executeBotTurn, 800);
+      if (engine.humanHand.length === 1) {
+        playSound('sfx_last_card');
+      }
+
+      updateState();
+
+      if (gameState.isGameOver) {
+        if (gameState.winnerId === 'You') playSound('sfx_win');
+        else playSound('sfx_lose');
+      } else if (gameState.currentTurnPlayerIndex === 1) {
+        setTimeout(executeBotTurn, 850);
+      }
+    } else {
+      playSound('sfx_invalid_move');
     }
   }
 
@@ -147,78 +108,178 @@
     if (selectedWhotCardIndex < 0) return;
 
     const res = engine.humanPlayCard(selectedWhotCardIndex, suit);
-    playSound('whot');
-    selectedWhotCardIndex = -1;
-    updateState();
-    appendTerminalLog(`[C++ Player] Played WHOT 20 -> Called Suit: ${suit.toUpperCase()}`);
+    if (res.success) {
+      playSound('sfx_whot_played');
+      updateState();
+      if (engine.humanHand.length === 1) playSound('sfx_last_card');
 
-    if (res.success && gameState.currentTurnPlayerIndex === 1 && !gameState.isGameOver) {
-      setTimeout(executeBotTurn, 800);
+      if (gameState.isGameOver) {
+        if (gameState.winnerId === 'You') playSound('sfx_win');
+        else playSound('sfx_lose');
+      } else if (gameState.currentTurnPlayerIndex === 1) {
+        setTimeout(executeBotTurn, 850);
+      }
+    } else {
+      playSound('sfx_invalid_move');
     }
   }
 
   function handleDrawMarket() {
     if (gameState.currentTurnPlayerIndex !== 0 || gameState.isGameOver) return;
     const res = engine.humanDrawMarket();
-    playSound('draw');
-    updateState();
-    appendTerminalLog(`[C++ Player] drawCard() executed. Market draw complete.`);
-
-    if (res.success && gameState.currentTurnPlayerIndex === 1 && !gameState.isGameOver) {
-      setTimeout(executeBotTurn, 800);
+    if (res.success) {
+      playSound('sfx_card_draw');
+      updateState();
+      if (gameState.currentTurnPlayerIndex === 1 && !gameState.isGameOver) {
+        setTimeout(executeBotTurn, 850);
+      }
+    } else {
+      playSound('sfx_invalid_move');
     }
   }
 
   function executeBotTurn() {
-    if (gameState.isGameOver) return;
-    const res = engine.executeBotTurn();
-    playSound('play');
-    updateState();
-    appendTerminalLog(`[C++ Bot AI] executeBotTurn() -> ${res.message}`);
+    if (gameState.isGameOver || gameState.currentTurnPlayerIndex !== 1) return;
+    const topCardBefore = engine.getTopCard();
 
-    if (gameState.currentTurnPlayerIndex === 1 && !gameState.isGameOver) {
-      setTimeout(executeBotTurn, 800);
+    const res = engine.executeBotTurn();
+    updateState();
+
+    if (res.success) {
+      const topCardAfter = engine.getTopCard();
+      if (topCardAfter && topCardAfter !== topCardBefore) {
+        const num = topCardAfter.number;
+        if (num === 20 || topCardAfter.suit === 'whot') playSound('sfx_whot_played');
+        else if (num === 1) playSound('sfx_hold_on');
+        else if (num === 2) playSound('sfx_pick_two');
+        else if (num === 5 && settings.pick3) playSound('sfx_pick_three');
+        else if (num === 8 && settings.suspend) playSound('sfx_suspension');
+        else if (num === 14) playSound('sfx_gen_market');
+        else playSound('sfx_card_play');
+
+        if (engine.botHand.length === 1) playSound('sfx_last_card');
+      } else {
+        playSound('sfx_card_draw');
+      }
+
+      if (gameState.isGameOver) {
+        if (gameState.winnerId === 'You') playSound('sfx_win');
+        else playSound('sfx_lose');
+      } else if (gameState.currentTurnPlayerIndex === 0) {
+        playSound('sfx_your_turn');
+      }
     }
   }
 
-  function selectFile(index: number) {
-    selectedFileIndex = index;
-    currentFile = CPP_SOURCE_FILES[index];
-    playSound('click');
-  }
+  // Keypad & Keyboard Listener
+  function handleKeyDown(event: KeyboardEvent) {
+    const key = event.key;
 
-  function appendTerminalLog(msg: string) {
-    const timestamp = new Date().toLocaleTimeString();
-    terminalLogs = [...terminalLogs, `[${timestamp}] ${msg}`];
-    if (terminalLogs.length > 100) terminalLogs.shift();
-  }
+    if (currentScreen === 'MAIN_MENU') {
+      if (key === 'ArrowUp') {
+        menuSelectedIndex = (menuSelectedIndex - 1 + menuOptions.length) % menuOptions.length;
+        playSound('sfx_btn_click');
+      } else if (key === 'ArrowDown') {
+        menuSelectedIndex = (menuSelectedIndex + 1) % menuOptions.length;
+        playSound('sfx_btn_click');
+      } else if (key === 'Enter' || key === ' ' || key === 'SoftRight' || key === 'F2') {
+        playSound('sfx_btn_click');
+        if (menuSelectedIndex === 0) handleStartNewGame();
+        else if (menuSelectedIndex === 1) currentScreen = 'HOW_TO_PLAY';
+        else if (menuSelectedIndex === 2) currentScreen = 'SETTINGS';
+      }
+    } else if (currentScreen === 'HOW_TO_PLAY') {
+      if (key === 'SoftLeft' || key === 'SoftRight' || key === 'Escape' || key === 'Backspace' || key === 'Enter' || key === ' ') {
+        playSound('sfx_btn_click');
+        currentScreen = 'MAIN_MENU';
+      }
+    } else if (currentScreen === 'SETTINGS') {
+      if (key === 'ArrowUp') {
+        settingsSelectedIndex = Math.max(0, settingsSelectedIndex - 1);
+        playSound('sfx_btn_click');
+      } else if (key === 'ArrowDown') {
+        settingsSelectedIndex = Math.min(2, settingsSelectedIndex + 1);
+        playSound('sfx_btn_click');
+      } else if (key === 'Enter' || key === ' ') {
+        playSound('sfx_btn_click');
+        if (settingsSelectedIndex === 0) {
+          settings.sfx = !settings.sfx;
+          setSoundMuted(!settings.sfx);
+        } else if (settingsSelectedIndex === 1) {
+          settings.pick3 = !settings.pick3;
+        } else if (settingsSelectedIndex === 2) {
+          settings.suspend = !settings.suspend;
+        }
+      } else if (key === 'SoftLeft' || key === 'SoftRight' || key === 'Escape' || key === 'Backspace') {
+        playSound('sfx_btn_click');
+        currentScreen = 'MAIN_MENU';
+      }
+    } else if (currentScreen === 'GAME') {
+      if (showWhotSuitModal) {
+        if (key === '1') handleSelectWhotSuit('circle');
+        else if (key === '2') handleSelectWhotSuit('triangle');
+        else if (key === '3') handleSelectWhotSuit('cross');
+        else if (key === '4') handleSelectWhotSuit('square');
+        else if (key === '5') handleSelectWhotSuit('star');
+        else if (key === 'ArrowLeft') {
+          whotSuitSelectedIndex = (whotSuitSelectedIndex - 1 + 5) % 5;
+          playSound('sfx_btn_click');
+        } else if (key === 'ArrowRight') {
+          whotSuitSelectedIndex = (whotSuitSelectedIndex + 1) % 5;
+          playSound('sfx_btn_click');
+        } else if (key === 'Enter' || key === ' ') {
+          handleSelectWhotSuit(suitsList[whotSuitSelectedIndex]);
+        } else if (key === 'Escape' || key === 'Backspace') {
+          showWhotSuitModal = false;
+        }
+        return;
+      }
 
-  function runCppCompilerTest() {
-    isCompilingCpp = true;
-    compilerOutput = "Running 'make clean && make' with g++ (Ubuntu 12.3.0) and Emscripten asm.js (WASM=0 for KaiOS RAM)...\n";
-    appendTerminalLog("Executing g++ and emcc asm.js compilation test...");
+      if (gameState.isGameOver) {
+        if (key === 'SoftLeft' || key === 'Enter' || key === ' ') {
+          handleStartNewGame();
+        } else if (key === 'SoftRight' || key === 'Escape' || key === 'Backspace') {
+          playSound('sfx_btn_click');
+          currentScreen = 'MAIN_MENU';
+        }
+        return;
+      }
 
-    setTimeout(() => {
-      compilerOutput += "rm -rf bin public/whot_engine_asm.js\n";
-      compilerOutput += "mkdir -p bin public\n";
-      compilerOutput += "g++ -std=c++17 -O2 -Wall -I./src/cpp -c src/cpp/WhotGameEngine.cpp -o bin/WhotGameEngine.o\n";
-      compilerOutput += "g++ -std=c++17 -O2 -Wall -I./src/cpp -c src/cpp/main.cpp -o bin/main.o\n";
-      compilerOutput += "g++ -std=c++17 -O2 -Wall -I./src/cpp bin/WhotGameEngine.o bin/main.o -o bin/whot_game_cli\n";
-      compilerOutput += "✓ Native Compilation Succeeded! Binary: ./bin/whot_game_cli (ELF 64-bit)\n\n";
-      compilerOutput += "emcc -std=c++17 -O2 -I./src/cpp -s WASM=0 -s SINGLE_FILE=1 -s ALLOW_MEMORY_GROWTH=1 -s EXIT_RUNTIME=1 src/cpp/WhotGameEngine.cpp src/cpp/main.cpp -o public/whot_engine_asm.js\n";
-      compilerOutput += "✓ Emscripten asm.js Compilation Succeeded! Bundle: public/whot_engine_asm.js (Legacy KaiOS RAM Compatible)\n\n";
-      compilerOutput += "Testing binary execution: ./bin/whot_game_cli --json\n";
-      compilerOutput += JSON.stringify(engine.getStateJSON(), null, 2);
-      isCompilingCpp = false;
-      appendTerminalLog("g++ and Emscripten asm.js compilation test completed successfully.");
-    }, 600);
+      // Normal In-Game Key Handling
+      if (key === 'ArrowLeft') {
+        kaiosSelectedCardIndex = Math.max(-1, kaiosSelectedCardIndex - 1);
+        playSound('sfx_btn_click');
+      } else if (key === 'ArrowRight') {
+        kaiosSelectedCardIndex = Math.min(gameState.human.hand.length - 1, kaiosSelectedCardIndex + 1);
+        playSound('sfx_btn_click');
+      } else if (key === 'Enter' || key === ' ' || key === 'ArrowUp') {
+        if (kaiosSelectedCardIndex === -1) {
+          handleDrawMarket();
+        } else {
+          handlePlayCard(kaiosSelectedCardIndex);
+        }
+      } else if (key === 'ArrowDown' || key === '0' || key === 'd') {
+        handleDrawMarket();
+      } else if (key === 'SoftLeft' || key === 'Escape' || key === 'm') {
+        playSound('sfx_btn_click');
+        currentScreen = 'MAIN_MENU';
+      } else if (key === 'SoftRight') {
+        if (kaiosSelectedCardIndex >= 0 && engine.isValidPlay(gameState.human.hand[kaiosSelectedCardIndex])) {
+          handlePlayCard(kaiosSelectedCardIndex);
+        } else {
+          handleDrawMarket();
+        }
+      } else if (key >= '1' && key <= '9') {
+        const numIdx = parseInt(key) - 1;
+        if (numIdx >= 0 && numIdx < gameState.human.hand.length) {
+          kaiosSelectedCardIndex = numIdx;
+          handlePlayCard(numIdx);
+        }
+      }
+    }
   }
 
   onMount(() => {
-    updateState();
-    appendTerminalLog("System initialized. Native C++ Whot Engine ready.");
-    appendTerminalLog("Compiler detected: g++ 12.3.0 & Emscripten emcc (Legacy asm.js target with WASM=0).");
-    appendTerminalLog("GitHub Pages CI/CD workflow configured at .github/workflows/deploy.yml");
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
@@ -226,1507 +287,768 @@
   });
 </script>
 
-<div class="app-container">
-  <!-- Top Header Bar -->
-  <header class="top-header">
-    <div class="header-brand">
-      <div class="brand-logo">C++</div>
-      <div class="brand-titles">
-        <h1 class="brand-name">Naija Whot C++ Engine</h1>
-        <p class="brand-sub">Native C++17 Card Game Engine & Web Interface</p>
-      </div>
-    </div>
+<div class="kaios-app-container">
+  <!-- Exact 320x240 Pixel Viewport Stage -->
+  <div class="kaios-stage">
 
-    <nav class="nav-tabs">
-      <button class="nav-btn" class:active={activeTab === 'game'} on:click={() => { activeTab = 'game'; playSound('click'); }}>
-        <span class="nav-icon">🎮</span> Play Whot Game
-      </button>
-      <button class="nav-btn" class:active={activeTab === 'kaios'} on:click={() => { activeTab = 'kaios'; playSound('click'); }}>
-        <span class="nav-icon">📱</span> 320x240 KaiOS Screen
-      </button>
-      <button class="nav-btn" class:active={activeTab === 'code'} on:click={() => { activeTab = 'code'; playSound('click'); }}>
-        <span class="nav-icon">💻</span> C++ Source Code
-      </button>
-      <button class="nav-btn" class:active={activeTab === 'terminal'} on:click={() => { activeTab = 'terminal'; playSound('click'); }}>
-        <span class="nav-icon">📟</span> C++ Terminal & Logs
-      </button>
-      <button class="nav-btn" class:active={activeTab === 'settings'} on:click={() => { activeTab = 'settings'; playSound('click'); }}>
-        <span class="nav-icon">⚙️</span> Rules & Settings
-      </button>
-    </nav>
-  </header>
-
-  <!-- Main Content Viewport -->
-  <main class="main-content">
-    {#if activeTab === 'game'}
-      <div class="game-view-layout">
-        <!-- Game Stats & Action Bar -->
-        <div class="game-action-bar">
-          <div class="action-bar-left">
-            <button class="action-btn primary" on:click={handleStartNewGame}>
-              <span>✨</span> Deal New Game
-            </button>
-            <div class="turn-badge" class:human-turn={gameState.currentTurnPlayerIndex === 0}>
-              {gameState.isGameOver ? '🏁 GAME OVER' : (gameState.currentTurnPlayerIndex === 0 ? '👉 YOUR TURN' : '🤖 BOT THINKING...')}
-            </div>
+    {#if currentScreen === 'MAIN_MENU'}
+      <!-- Classic KaiOS Main Menu (Matches kaios_ss_1787655899543.png) -->
+      <div class="kaios-menu-screen">
+        <div class="gold-border-frame">
+          <div class="menu-title-area">
+            <h1 class="game-title">NAIJA WHOT</h1>
+            <p class="game-subtitle">CLASSIC KAIOS EDITION</p>
           </div>
 
-          <div class="action-bar-right">
-            <div class="stat-pill">
-              <span class="pill-label">Market Pile:</span>
-              <span class="pill-value">{gameState.deck.marketCount} cards</span>
-            </div>
-            <div class="stat-pill">
-              <span class="pill-label">Played Pile:</span>
-              <span class="pill-value">{gameState.deck.playedCount} cards</span>
-            </div>
+          <div class="menu-items-list">
+            {#each menuOptions as option, idx}
+              <button
+                class="menu-option-btn"
+                class:selected={idx === menuSelectedIndex}
+                on:click={() => { menuSelectedIndex = idx; playSound('sfx_btn_click'); if (idx === 0) handleStartNewGame(); else if (idx === 1) currentScreen = 'HOW_TO_PLAY'; else if (idx === 2) currentScreen = 'SETTINGS'; }}
+              >
+                {option}
+              </button>
+            {/each}
+          </div>
+
+          <div class="menu-prompt-text">
+            USE ▲/▼ TO SELECT, OK TO CONFIRM
+          </div>
+
+          <!-- Bottom Softkey Bar -->
+          <div class="softkey-bar">
+            <span class="softkey left">EXIT</span>
+            <span class="softkey right">SELECT</span>
           </div>
         </div>
+      </div>
 
-        <!-- Central Game Board -->
-        <div class="game-board-card">
-          <!-- Opponent Bot Area -->
-          <div class="player-section bot-section">
-            <div class="player-info-row">
-              <div class="player-avatar bot">🤖</div>
-              <div class="player-details">
-                <span class="player-name">Naija Bot (C++ AI Engine)</span>
-                <span class="player-stats">{gameState.bot.cardCount} cards in hand | Score: {gameState.bot.score}</span>
-              </div>
-            </div>
+    {:else if currentScreen === 'HOW_TO_PLAY'}
+      <!-- How To Play Overlay Screen -->
+      <div class="kaios-overlay-screen">
+        <div class="overlay-header">
+          <h2>HOW TO PLAY</h2>
+        </div>
+        <div class="rules-body">
+          <p><strong class="hl">CARD 1:</strong> HOLD ON (Play again)</p>
+          <p><strong class="hl">CARD 2:</strong> PICK TWO (Opponent draws 2)</p>
+          <p><strong class="hl">CARD 5:</strong> PICK THREE (Opponent draws 3)</p>
+          <p><strong class="hl">CARD 8:</strong> SUSPENSION (Opponent turn skipped)</p>
+          <p><strong class="hl">CARD 14:</strong> GENERAL MARKET (Everyone draws 1)</p>
+          <p><strong class="hl">CARD 20:</strong> WHOT (Call any suit you want)</p>
+        </div>
+        <div class="softkey-bar">
+          <button class="softkey left" on:click={() => { playSound('sfx_btn_click'); currentScreen = 'MAIN_MENU'; }}>BACK</button>
+          <button class="softkey right" on:click={() => { playSound('sfx_btn_click'); currentScreen = 'MAIN_MENU'; }}>BACK</button>
+        </div>
+      </div>
 
-            <div class="card-hand-row bot-hand">
-              {#each Array(gameState.bot.cardCount) as _, i}
-                <div class="card-item card-back">
-                  <div class="card-back-pattern">WHOT</div>
-                </div>
+    {:else if currentScreen === 'SETTINGS'}
+      <!-- Settings Overlay Screen -->
+      <div class="kaios-overlay-screen">
+        <div class="overlay-header">
+          <h2>SETTINGS</h2>
+        </div>
+        <div class="settings-body">
+          <div class="setting-row" class:selected={settingsSelectedIndex === 0} on:click={() => { settingsSelectedIndex = 0; settings.sfx = !settings.sfx; setSoundMuted(!settings.sfx); playSound('sfx_btn_click'); }}>
+            <span>SOUND FX:</span>
+            <span class="val">{settings.sfx ? 'ON' : 'OFF'}</span>
+          </div>
+          <div class="setting-row" class:selected={settingsSelectedIndex === 1} on:click={() => { settingsSelectedIndex = 1; settings.pick3 = !settings.pick3; playSound('sfx_btn_click'); }}>
+            <span>PICK 3 (CARD 5):</span>
+            <span class="val">{settings.pick3 ? 'ON' : 'OFF'}</span>
+          </div>
+          <div class="setting-row" class:selected={settingsSelectedIndex === 2} on:click={() => { settingsSelectedIndex = 2; settings.suspend = !settings.suspend; playSound('sfx_btn_click'); }}>
+            <span>SUSPEND (CARD 8):</span>
+            <span class="val">{settings.suspend ? 'ON' : 'OFF'}</span>
+          </div>
+        </div>
+        <div class="softkey-bar">
+          <button class="softkey left" on:click={() => { playSound('sfx_btn_click'); currentScreen = 'MAIN_MENU'; }}>BACK</button>
+          <button class="softkey right" on:click={() => { playSound('sfx_btn_click'); currentScreen = 'MAIN_MENU'; }}>BACK</button>
+        </div>
+      </div>
+
+    {:else if currentScreen === 'GAME'}
+      <!-- Classic In-Game Felt Table Screen (Matches kaios_ss_1787656302578.png) -->
+      <div class="kaios-game-table">
+        <div class="table-border-frame">
+
+          <!-- Top Status Header Bar -->
+          <div class="table-header-bar">
+            <span class="cpu-label">CPU BOT</span>
+
+            <!-- CPU Bot Hand (Card backs facing down) -->
+            <div class="cpu-hand-cards">
+              {#each Array(Math.min(6, gameState.bot.cardCount)) as _, i}
+                <img src={getCardBackImage()} alt="Card Back" class="cpu-card-back" style="transform: translateX(-{i * 10}px);" />
               {/each}
+              {#if gameState.bot.cardCount > 6}
+                <span class="bot-more-badge">+{gameState.bot.cardCount - 6}</span>
+              {/if}
             </div>
+
+            <span class="turn-banner" class:player-turn={gameState.currentTurnPlayerIndex === 0}>
+              {#if gameState.isGameOver}
+                GAME OVER
+              {:else if gameState.currentTurnPlayerIndex === 0}
+                YOUR TURN ({gameState.human.hand.filter(c => engine.isValidPlay(c)).length} VALID)
+              {:else}
+                CPU THINKING...
+              {/if}
+            </span>
           </div>
 
-          <!-- Table Center Piles Area -->
+          <!-- Middle Table Playing Field -->
           <div class="table-center-area">
-            <!-- Market Pile -->
-            <div class="pile-container market-pile" on:click={handleDrawMarket} role="button" tabindex="0">
-              <div class="pile-card card-back stack">
-                <div class="card-back-pattern">MARKET ({gameState.deck.marketCount})</div>
-              </div>
-              <span class="pile-label">Market Deck (Click to Draw)</span>
+
+            <!-- Market Deck Stack (Middle Left) -->
+            <div
+              class="market-deck-group"
+              class:focused={kaiosSelectedCardIndex === -1}
+              on:click={() => { kaiosSelectedCardIndex = -1; handleDrawMarket(); }}
+            >
+              <div class="card-stack-shadow"></div>
+              <img src={getCardBackImage()} alt="Market Deck" class="market-card-img" />
+              <div class="market-label-text">MARKET: {gameState.deck.marketCount}</div>
             </div>
 
-            <!-- Top Played Card -->
-            <div class="pile-container played-pile">
+            <!-- Top Played Card Stack (Middle Center) -->
+            <div class="played-card-group">
               {#if gameState.deck.topCard}
                 {@const top = gameState.deck.topCard}
-                <div class="card-item suit-{top.suit} played-top">
-                  <div class="card-corner top-left">
-                    <span class="card-num">{top.number === 20 ? 'WHOT' : top.number}</span>
-                    <span class="card-sym">{suitToSymbol(top.suit)}</span>
-                  </div>
-                  <div class="card-center-icon">
-                    <span class="giant-symbol">{suitToSymbol(top.suit)}</span>
-                    <span class="center-num">{top.number === 20 ? '20' : top.number}</span>
-                  </div>
-                  <div class="card-corner bottom-right">
-                    <span class="card-num">{top.number === 20 ? 'WHOT' : top.number}</span>
-                    <span class="card-sym">{suitToSymbol(top.suit)}</span>
-                  </div>
-                </div>
-              {:else}
-                <div class="card-item empty-pile">Empty</div>
+                <img src={getCardImage(top.suit, top.number)} alt="Top Played Card" class="played-card-img" />
               {/if}
-              <span class="pile-label">Top Played Card</span>
             </div>
 
-            <!-- Special Status Indicators -->
-            <div class="status-indicators-panel">
+            <!-- Requested Suit & Pick Warning Callouts -->
+            <div class="table-callouts">
               {#if gameState.deck.requestedSuit !== 'none'}
-                <div class="status-alert suit-alert">
-                  <span class="alert-icon">👑</span>
-                  <span>Requested Suit: <strong>{gameState.deck.requestedSuit.toUpperCase()} {suitToSymbol(gameState.deck.requestedSuit)}</strong></span>
+                <div class="suit-callout-badge">
+                  <span>WANTED: {gameState.deck.requestedSuit.toUpperCase()}</span>
+                  <img src={getSuitIcon(gameState.deck.requestedSuit)} alt="Suit" class="callout-suit-icon" />
                 </div>
               {/if}
-
               {#if gameState.deck.pendingPickCount > 0}
-                <div class="status-alert pick-alert">
-                  <span class="alert-icon">⚠️</span>
-                  <span>Pending Penalty: <strong>PICK {gameState.deck.pendingPickCount} CARDS!</strong></span>
+                <div class="pick-callout-badge">
+                  ⚠️ PICK +{gameState.deck.pendingPickCount}
                 </div>
               {/if}
             </div>
           </div>
 
-          <!-- Human Player Area -->
-          <div class="player-section human-section">
-            <div class="player-info-row">
-              <div class="player-avatar human">👤</div>
-              <div class="player-details">
-                <span class="player-name">You (Player)</span>
-                <span class="player-stats">{gameState.human.cardCount} cards in hand | Score: {gameState.human.score}</span>
-              </div>
-              <button class="draw-btn" on:click={handleDrawMarket} disabled={gameState.currentTurnPlayerIndex !== 0 || gameState.isGameOver}>
-                📥 Draw Card
-              </button>
-            </div>
-
-            <div class="card-hand-row human-hand">
+          <!-- Human Hand Cards (Bottom Right / Fanned out) -->
+          <div class="player-hand-container">
+            <div class="hand-cards-flex">
               {#each gameState.human.hand as card, idx}
                 {@const isValid = engine.isValidPlay(card)}
-                <button
-                  class="card-item suit-{card.suit} playable-{isValid}"
-                  disabled={!isValid || gameState.currentTurnPlayerIndex !== 0 || gameState.isGameOver}
-                  on:click={() => handlePlayCard(idx)}
+                {@const isFocused = idx === kaiosSelectedCardIndex}
+                <div
+                  class="hand-card-wrapper"
+                  class:focused={isFocused}
+                  class:valid={isValid}
+                  class:invalid={!isValid}
+                  on:click={() => { kaiosSelectedCardIndex = idx; handlePlayCard(idx); }}
                 >
-                  <div class="card-corner top-left">
-                    <span class="card-num">{card.number === 20 ? 'WHOT' : card.number}</span>
-                    <span class="card-sym">{suitToSymbol(card.suit)}</span>
-                  </div>
-                  <div class="card-center-icon">
-                    <span class="giant-symbol">{suitToSymbol(card.suit)}</span>
-                    <span class="center-num">{card.number === 20 ? '20' : card.number}</span>
-                  </div>
-                  <div class="card-corner bottom-right">
-                    <span class="card-num">{card.number === 20 ? 'WHOT' : card.number}</span>
-                    <span class="card-sym">{suitToSymbol(card.suit)}</span>
-                  </div>
-
-                  {#if !isValid}
-                    <div class="card-disabled-overlay">Invalid</div>
-                  {/if}
-                </button>
+                  <img src={getCardImage(card.suit, card.number)} alt="{card.suit} {card.number}" class="hand-card-img" />
+                </div>
               {/each}
             </div>
           </div>
-        </div>
 
-        <!-- Game Log Feed -->
-        <div class="game-logs-card">
-          <div class="logs-header">
-            <h3>📜 Live C++ Game Event Stream</h3>
-          </div>
-          <div class="logs-body">
-            {#each gameState.logs as log}
-              <div class="log-line">{log}</div>
-            {/each}
-          </div>
-        </div>
-      </div>
-
-    {:else if activeTab === 'kaios'}
-      <!-- KaiOS 320x240 Device Screen Viewport -->
-      <div class="kaios-device-container">
-        <div class="kaios-device-body">
-          <!-- Device Top Bezel -->
-          <div class="device-top-bezel">
-            <div class="earpiece-speaker"></div>
-            <div class="device-brand-text">KaiOS 2.5 • 320x240 Display</div>
-          </div>
-
-          <!-- 320x240 Pixel Screen Viewport -->
-          <div class="kaios-screen-viewport">
-            <!-- KaiOS Status Bar (320px x 20px) -->
-            <div class="kaios-status-bar">
-              <span class="status-left">📶 4G</span>
-              <span class="status-title">Naija Whot C++</span>
-              <span class="status-right">85% 🔋</span>
-            </div>
-
-            <!-- KaiOS Game Canvas (320px x 220px) -->
-            <div class="kaios-game-screen">
-              <!-- Bot Info Header -->
-              <div class="kaios-bot-bar">
-                <span class="kaios-avatar">🤖</span>
-                <span class="kaios-bot-name">Bot: {gameState.bot.cardCount} cards</span>
-                <span class="kaios-turn-badge" class:turn-active={gameState.currentTurnPlayerIndex === 1}>
-                  {gameState.currentTurnPlayerIndex === 1 ? 'BOT THINKING' : 'YOUR TURN'}
-                </span>
-              </div>
-
-              <!-- Center Table Area -->
-              <div class="kaios-table-center">
-                <!-- Market Pile -->
-                <button class="kaios-market-btn" on:click={handleDrawMarket} disabled={gameState.currentTurnPlayerIndex !== 0 || gameState.isGameOver}>
-                  <div class="kaios-card-back-icon">WHOT</div>
-                  <span class="kaios-market-count">Deck ({gameState.deck.marketCount})</span>
-                </button>
-
-                <!-- Top Played Card -->
-                <div class="kaios-top-card-container">
-                  {#if gameState.deck.topCard}
-                    {@const top = gameState.deck.topCard}
-                    <div class="kaios-card suit-{top.suit}">
-                      <span class="kaios-card-num">{top.number === 20 ? 'W' : top.number}</span>
-                      <span class="kaios-card-sym">{suitToSymbol(top.suit)}</span>
-                    </div>
-                  {/if}
-                  <span class="kaios-card-label">Played Top</span>
-                </div>
-
-                <!-- Status Callouts -->
-                <div class="kaios-status-callouts">
-                  {#if gameState.deck.requestedSuit !== 'none'}
-                    <div class="kaios-suit-badge">
-                      👑 {gameState.deck.requestedSuit.toUpperCase()} {suitToSymbol(gameState.deck.requestedSuit)}
-                    </div>
-                  {/if}
-                  {#if gameState.deck.pendingPickCount > 0}
-                    <div class="kaios-pick-badge">
-                      ⚠️ PICK +{gameState.deck.pendingPickCount}
-                    </div>
-                  {/if}
-                </div>
-              </div>
-
-              <!-- Human Player Hand Bar -->
-              <div class="kaios-player-hand-container">
-                <div class="kaios-hand-scroll">
-                  {#each gameState.human.hand as card, idx}
-                    {@const isValid = engine.isValidPlay(card)}
-                    {@const isFocused = idx === kaiosSelectedCardIndex}
-                    <button
-                      class="kaios-hand-card suit-{card.suit}"
-                      class:focused={isFocused}
-                      class:disabled={!isValid || gameState.currentTurnPlayerIndex !== 0}
-                      on:click={() => { kaiosSelectedCardIndex = idx; handlePlayCard(idx); }}
-                    >
-                      <span class="kaios-mini-num">{card.number === 20 ? 'W' : card.number}</span>
-                      <span class="kaios-mini-sym">{suitToSymbol(card.suit)}</span>
-                    </button>
-                  {/each}
-                </div>
-              </div>
-
-              <!-- KaiOS Bottom Softkey Bar (320px x 22px) -->
-              <div class="kaios-softkey-bar">
-                <button class="softkey left" on:click={handleDrawMarket}>Draw</button>
-                <button class="softkey center" on:click={() => handlePlayCard(kaiosSelectedCardIndex)}>PLAY</button>
-                <button class="softkey right" on:click={handleStartNewGame}>New Game</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Phone Keypad Controls -->
-          <div class="kaios-keypad">
-            <div class="keypad-softkeys-row">
-              <button class="keypad-btn softkey-btn" on:click={handleDrawMarket}>LSK</button>
-              <button class="keypad-btn call-btn">📞</button>
-              <button class="keypad-btn softkey-btn" on:click={handleStartNewGame}>RSK</button>
-            </div>
-
-            <!-- D-Pad Directional Controls -->
-            <div class="dpad-container">
-              <button class="dpad-btn up" on:click={() => handlePlayCard(kaiosSelectedCardIndex)}>▲</button>
-              <div class="dpad-middle-row">
-                <button class="dpad-btn left" on:click={() => { kaiosSelectedCardIndex = Math.max(0, kaiosSelectedCardIndex - 1); }}>◀</button>
-                <button class="dpad-btn center" on:click={() => handlePlayCard(kaiosSelectedCardIndex)}>OK</button>
-                <button class="dpad-btn right" on:click={() => { kaiosSelectedCardIndex = Math.min(Math.max(0, gameState.human.hand.length - 1), kaiosSelectedCardIndex + 1); }}>▶</button>
-              </div>
-              <button class="dpad-btn down" on:click={handleDrawMarket}>▼</button>
-            </div>
-
-            <!-- Numeric Keypad -->
-            <div class="num-keypad">
-              <button class="num-btn" on:click={() => handleSelectWhotSuit('circle')}>1 <span class="sub">● Circle</span></button>
-              <button class="num-btn" on:click={() => handleSelectWhotSuit('triangle')}>2 <span class="sub">▲ Tri</span></button>
-              <button class="num-btn" on:click={() => handleSelectWhotSuit('cross')}>3 <span class="sub">✖ Cross</span></button>
-              <button class="num-btn" on:click={() => handleSelectWhotSuit('square')}>4 <span class="sub">■ Sq</span></button>
-              <button class="num-btn" on:click={() => handleSelectWhotSuit('star')}>5 <span class="sub">★ Star</span></button>
-              <button class="num-btn">6 <span class="sub">MNO</span></button>
-              <button class="num-btn">7 <span class="sub">PQRS</span></button>
-              <button class="num-btn">8 <span class="sub">TUV</span></button>
-              <button class="num-btn">9 <span class="sub">WXYZ</span></button>
-              <button class="num-btn">*</button>
-              <button class="num-btn" on:click={handleDrawMarket}>0 <span class="sub">Draw</span></button>
-              <button class="num-btn">#</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- KaiOS Device Screen Specs Panel -->
-        <div class="kaios-info-panel">
-          <div class="info-badge">KaiOS 320x240 Target</div>
-          <h3>📱 320x240 Pixel Screen Emulator</h3>
-          <p>This screen is locked to exact <strong>320 × 240 pixel resolution</strong> matching KaiOS feature phones (Nokia 8110, Nokia 2720, JioPhone) powered by Emscripten <code>asm.js</code> (WASM=0).</p>
-          <div class="controls-guide">
-            <h4>🎮 Physical Keypad & Keyboard Shortcuts:</h4>
-            <ul>
-              <li><strong>Left / Right Arrows (◀ / ▶):</strong> Navigate and highlight hand cards</li>
-              <li><strong>OK / Center Key (Enter / Space / ▲):</strong> Play highlighted card</li>
-              <li><strong>LSK / Down Key (▼ / Key D / 0):</strong> Draw from market deck</li>
-              <li><strong>Number Keys 1 to 5:</strong> Call WHOT suits (Circle, Triangle, Cross, Square, Star)</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-    {:else if activeTab === 'code'}
-      <!-- C++ Code Explorer Tab -->
-      <div class="code-explorer-layout">
-        <!-- Sidebar File Directory -->
-        <aside class="code-sidebar">
-          <div class="sidebar-header">
-            <h3>📂 C++ Project Structure</h3>
-          </div>
-          <div class="file-tree-list">
-            {#each CPP_SOURCE_FILES as file, i}
-              <button class="file-item-btn" class:selected={selectedFileIndex === i} on:click={() => selectFile(i)}>
-                <span class="file-icon">{file.filename.endsWith('.hpp') ? '📄' : file.filename.endsWith('.cpp') ? '⚙️' : '🔧'}</span>
-                <span class="file-name">{file.filename}</span>
-              </button>
-            {/each}
-          </div>
-
-          <div class="compiler-info-box">
-            <h4>Compiler Settings</h4>
-            <p>Target: <code>g++ -std=c++17 -O2</code></p>
-            <p>Architecture: <code>x86_64-pc-linux-gnu</code></p>
-          </div>
-        </aside>
-
-        <!-- Main Code Editor View -->
-        <div class="code-editor-card">
-          <div class="editor-tabs-bar">
-            <div class="editor-tab active">
-              <span>{currentFile.filename}</span>
-              <span class="tab-path">({currentFile.path})</span>
-            </div>
-          </div>
-          <pre class="code-block"><code>{currentFile.content}</code></pre>
-        </div>
-      </div>
-
-    {:else if activeTab === 'terminal'}
-      <!-- C++ Terminal & Execution Tab -->
-      <div class="terminal-layout">
-        <div class="terminal-card">
-          <div class="terminal-header">
-            <div class="terminal-title">
-              <span class="term-dots">🔴 🟡 🟢</span>
-              <span>bash - C++ Compiler Terminal (g++ 12.3.0)</span>
-            </div>
-            <button class="compile-btn" disabled={isCompilingCpp} on:click={runCppCompilerTest}>
-              {isCompilingCpp ? '⏳ Compiling...' : '🚀 Test Recompile (make clean && make)'}
+          <!-- In-Game Bottom Softkeys Bar -->
+          <div class="softkey-bar">
+            <button class="softkey left" on:click={() => { playSound('sfx_btn_click'); currentScreen = 'MAIN_MENU'; }}>
+              MENU
+            </button>
+            <button class="softkey right" on:click={() => {
+              if (kaiosSelectedCardIndex === -1) handleDrawMarket();
+              else handlePlayCard(kaiosSelectedCardIndex);
+            }}>
+              {#if kaiosSelectedCardIndex === -1}
+                MARKET
+              {:else if kaiosSelectedCardIndex >= 0 && engine.isValidPlay(gameState.human.hand[kaiosSelectedCardIndex])}
+                PLAY
+              {:else}
+                MARKET
+              {/if}
             </button>
           </div>
 
-          <div class="terminal-screen">
-            {#if compilerOutput}
-              <pre class="compiler-out">{compilerOutput}</pre>
-            {/if}
-
-            <div class="terminal-divider">--- Event Stream Log ---</div>
-            {#each terminalLogs as log}
-              <div class="term-line">{log}</div>
-            {/each}
-          </div>
         </div>
-      </div>
 
-    {:else if activeTab === 'settings'}
-      <!-- Rules & Settings Tab -->
-      <div class="settings-layout">
-        <div class="settings-card">
-          <h2>⚙️ C++ Game Engine Rules & Configuration</h2>
-          <p class="settings-intro">Configure special card rules passed directly to the C++ <code>GameSettings</code> struct.</p>
-
-          <div class="settings-grid">
-            <div class="setting-item">
-              <label for="pick3-setting" class="setting-label">
-                <span class="setting-title">Pick 3 Rule (Card 5)</span>
-                <span class="setting-desc">Card 5 forces opponent to pick 3 cards (defendable with another 5)</span>
-              </label>
-              <input id="pick3-setting" type="checkbox" bind:checked={settings.pick3} on:change={handleStartNewGame} />
-            </div>
-
-            <div class="setting-item">
-              <label for="suspend-setting" class="setting-label">
-                <span class="setting-title">Suspend Rule (Card 8)</span>
-                <span class="setting-desc">Card 8 skips the opponent's next turn</span>
-              </label>
-              <input id="suspend-setting" type="checkbox" bind:checked={settings.suspend} on:change={handleStartNewGame} />
-            </div>
-
-            <div class="setting-item">
-              <label for="whotCard-setting" class="setting-label">
-                <span class="setting-title">WHOT 20 Wildcards</span>
-                <span class="setting-desc">Include 5 WHOT 20 wildcard cards in deck</span>
-              </label>
-              <input id="whotCard-setting" type="checkbox" bind:checked={settings.whotCard} on:change={handleStartNewGame} />
-            </div>
-
-            <div class="setting-item">
-              <label for="emptyMarket-setting" class="setting-label">
-                <span class="setting-title">Empty Market Ends Game</span>
-                <span class="setting-desc">End game immediately when market pile runs empty (lowest score wins)</span>
-              </label>
-              <input id="emptyMarket-setting" type="checkbox" bind:checked={settings.emptyMarketEnds} on:change={handleStartNewGame} />
-            </div>
-
-            <div class="setting-item">
-              <label for="sfx-setting" class="setting-label">
-                <span class="setting-title">Sound Effects</span>
-                <span class="setting-desc">Audio synthesizer feedback on card plays and turns</span>
-              </label>
-              <input id="sfx-setting" type="checkbox" bind:checked={settings.sfx} />
+        <!-- WHOT Card Suit Selector Popup Modal -->
+        {#if showWhotSuitModal}
+          <div class="whot-suit-modal-backdrop">
+            <div class="whot-suit-modal">
+              <h3>SELECT A SUIT</h3>
+              <div class="suits-grid">
+                {#each suitsList as suit, idx}
+                  <button
+                    class="suit-select-btn"
+                    class:focused={idx === whotSuitSelectedIndex}
+                    on:click={() => handleSelectWhotSuit(suit)}
+                  >
+                    <span class="suit-key-num">{idx + 1}</span>
+                    <img src={getSuitIcon(suit)} alt={suit} class="modal-suit-img" />
+                    <span class="suit-name-text">{suit.toUpperCase()}</span>
+                  </button>
+                {/each}
+              </div>
             </div>
           </div>
-        </div>
+        {/if}
+
+        <!-- Game Over Popup Modal -->
+        {#if gameState.isGameOver}
+          <div class="gameover-modal-backdrop">
+            <div class="gameover-modal">
+              <h2>{gameState.winnerId === 'You' ? 'YOU WIN! 🎉' : 'CPU WINS! 🤖'}</h2>
+              <p>Your Score: <strong>{gameState.human.score}</strong> | Bot Score: <strong>{gameState.bot.score}</strong></p>
+              <div class="gameover-softkeys">
+                <button class="modal-btn" on:click={handleStartNewGame}>REPLAY (LSK)</button>
+                <button class="modal-btn secondary" on:click={() => currentScreen = 'MAIN_MENU'}>MENU (RSK)</button>
+              </div>
+            </div>
+          </div>
+        {/if}
+
       </div>
     {/if}
-  </main>
+
+  </div>
 </div>
 
-<!-- WHOT 20 Suit Selector Modal -->
-{#if showWhotSuitModal}
-  <div class="modal-backdrop">
-    <div class="modal-card">
-      <h3>👑 WHOT 20 Wildcard Played!</h3>
-      <p>Select the suit you wish to call for the next turn:</p>
-
-      <div class="suit-selection-grid">
-        <button class="suit-select-btn circle" on:click={() => handleSelectWhotSuit('circle')}>
-          <span class="suit-icon">●</span>
-          <span>Circle</span>
-        </button>
-
-        <button class="suit-select-btn triangle" on:click={() => handleSelectWhotSuit('triangle')}>
-          <span class="suit-icon">▲</span>
-          <span>Triangle</span>
-        </button>
-
-        <button class="suit-select-btn cross" on:click={() => handleSelectWhotSuit('cross')}>
-          <span class="suit-icon">✖</span>
-          <span>Cross</span>
-        </button>
-
-        <button class="suit-select-btn square" on:click={() => handleSelectWhotSuit('square')}>
-          <span class="suit-icon">■</span>
-          <span>Square</span>
-        </button>
-
-        <button class="suit-select-btn star" on:click={() => handleSelectWhotSuit('star')}>
-          <span class="suit-icon">★</span>
-          <span>Star</span>
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
 <style>
-  :global(body) {
-    margin: 0;
-    padding: 0;
-    background-color: #0b0f19;
-    color: #e2e8f0;
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  }
-
-  .app-container {
-    display: flex;
-    flex-direction: column;
-    min-height: 100vh;
-    background-color: #0b0f19;
-  }
-
-  /* Header Bar */
-  .top-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.85rem 1.5rem;
-    background-color: #0f172a;
-    border-bottom: 1px solid #1e293b;
-  }
-
-  .header-brand {
-    display: flex;
-    align-items: center;
-    gap: 0.85rem;
-  }
-
-  .brand-logo {
-    background: linear-gradient(135deg, #0284c7, #2563eb);
-    color: #fff;
-    font-weight: 900;
-    font-size: 1.1rem;
-    padding: 0.4rem 0.65rem;
-    border-radius: 8px;
-    letter-spacing: 0.05em;
-  }
-
-  .brand-titles {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .brand-name {
-    margin: 0;
-    font-size: 1.15rem;
-    font-weight: 800;
-    color: #f8fafc;
-  }
-
-  .brand-sub {
-    margin: 0;
-    font-size: 0.72rem;
-    color: #94a3b8;
-  }
-
-  .nav-tabs {
-    display: flex;
-    gap: 0.4rem;
-  }
-
-  .nav-btn {
-    background-color: transparent;
-    border: 1px solid transparent;
-    color: #94a3b8;
-    padding: 0.5rem 0.85rem;
-    border-radius: 8px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    transition: all 0.15s ease;
-  }
-
-  .nav-btn:hover {
-    color: #f8fafc;
-    background-color: #1e293b;
-  }
-
-  .nav-btn.active {
-    background-color: #1e293b;
-    border-color: #38bdf8;
-    color: #38bdf8;
-  }
-
-  /* Main Viewport */
-  .main-content {
-    flex: 1;
-    padding: 1.5rem;
-    max-width: 1400px;
-    margin: 0 auto;
-    width: 100%;
-    box-sizing: border-box;
-  }
-
-  /* Game Layout */
-  .game-view-layout {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  .game-action-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background-color: #1e293b;
-    padding: 0.75rem 1.25rem;
-    border-radius: 12px;
-    border: 1px solid #334155;
-  }
-
-  .action-bar-left {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .action-btn {
-    background: linear-gradient(135deg, #0284c7, #2563eb);
-    color: #fff;
-    border: none;
-    padding: 0.55rem 1.1rem;
-    border-radius: 8px;
-    font-weight: 700;
-    font-size: 0.85rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-
-  .action-btn:hover {
-    opacity: 0.95;
-  }
-
-  .turn-badge {
-    background-color: #334155;
-    color: #94a3b8;
-    padding: 0.4rem 0.85rem;
-    border-radius: 20px;
-    font-size: 0.78rem;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-  }
-
-  .turn-badge.human-turn {
-    background-color: #065f46;
-    color: #34d399;
-  }
-
-  .action-bar-right {
-    display: flex;
-    gap: 1rem;
-  }
-
-  .stat-pill {
-    background-color: #0f172a;
-    padding: 0.35rem 0.75rem;
-    border-radius: 6px;
-    border: 1px solid #334155;
-    font-size: 0.78rem;
-  }
-
-  .pill-label { color: #94a3b8; margin-right: 0.3rem; }
-  .pill-value { font-weight: 700; color: #f8fafc; }
-
-  /* Game Board Card */
-  .game-board-card {
-    background: radial-gradient(circle at 50% 50%, #064e3b 0%, #022c22 100%);
-    border: 2px solid #047857;
-    border-radius: 16px;
-    padding: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
-  }
-
-  .player-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .player-info-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .player-avatar {
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
+  /* Base Container filling 100% of viewport */
+  .kaios-app-container {
+    width: 100vw;
+    height: 100vh;
+    background-color: #022c22;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.2rem;
-    background-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .player-details {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .player-name {
-    font-weight: 800;
-    font-size: 0.95rem;
-    color: #fef08a;
-  }
-
-  .player-stats {
-    font-size: 0.75rem;
-    color: #a7f3d0;
-  }
-
-  .draw-btn {
-    margin-left: auto;
-    background-color: #0284c7;
-    color: white;
-    border: none;
-    padding: 0.4rem 0.85rem;
-    border-radius: 6px;
-    font-weight: 700;
-    font-size: 0.8rem;
-    cursor: pointer;
-  }
-
-  .card-hand-row {
-    display: flex;
-    gap: 0.6rem;
-    overflow-x: auto;
-    padding: 0.5rem 0;
-  }
-
-  /* Card Item Styling */
-  .card-item {
-    width: 80px;
-    height: 115px;
-    background-color: #ffffff;
-    border-radius: 8px;
-    border: 2px solid #cbd5e1;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 0.35rem;
-    box-sizing: border-box;
-    position: relative;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-    cursor: pointer;
-    transition: transform 0.15s ease;
+    overflow: hidden;
     user-select: none;
+    font-family: 'Luckiest Guy', 'Baloo Chettan', system-ui, sans-serif;
   }
 
-  .card-item:hover {
-    transform: translateY(-6px);
-  }
-
-  .card-back {
-    background: linear-gradient(135deg, #1e3a8a 0%, #1e1b4b 100%);
-    border-color: #3b82f6;
+  /* Exact 320x240 Pixel Stage viewport */
+  .kaios-stage {
+    width: 320px;
+    height: 240px;
+    background-color: #064e3b;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 0 25px rgba(0, 0, 0, 0.9);
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
+    box-sizing: border-box;
   }
 
-  .card-back-pattern {
-    color: #60a5fa;
-    font-weight: 900;
-    font-size: 0.75rem;
+  /* Smooth scale scaling for large monitors while locking 320x240 aspect ratio */
+  @media (min-width: 480px) and (min-height: 360px) {
+    .kaios-stage {
+      transform: scale(1.4);
+      transform-origin: center center;
+    }
+  }
+  @media (min-width: 640px) and (min-height: 480px) {
+    .kaios-stage {
+      transform: scale(1.9);
+      transform-origin: center center;
+    }
+  }
+  @media (min-width: 960px) and (min-height: 720px) {
+    .kaios-stage {
+      transform: scale(2.6);
+      transform-origin: center center;
+    }
+  }
+
+  /* MAIN MENU SCREEN (kaios_ss_1787655899543.png) */
+  .kaios-menu-screen {
+    width: 100%;
+    height: 100%;
+    background-color: #064e3b;
+    padding: 6px;
+    box-sizing: border-box;
+  }
+
+  .gold-border-frame {
+    width: 100%;
+    height: 100%;
+    border: 3px solid #d97706;
+    outline: 1px solid #facc15;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    background: radial-gradient(circle at 50% 40%, #065f46 0%, #022c22 100%);
+  }
+
+  .menu-title-area {
+    text-align: center;
+    margin-top: 2px;
+  }
+
+  .game-title {
+    font-size: 1.55rem;
+    color: #facc15;
+    margin: 0;
+    line-height: 1;
+    text-shadow: 2px 2px 0px #000, -1px -1px 0 #92400e;
     letter-spacing: 0.05em;
+  }
+
+  .game-subtitle {
+    font-size: 0.62rem;
+    color: #e2e8f0;
+    margin: 2px 0 0 0;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+  }
+
+  .menu-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 82%;
+  }
+
+  .menu-option-btn {
+    background-color: #0f172a;
+    border: 1.5px solid #334155;
+    border-radius: 6px;
+    color: #f8fafc;
+    padding: 5px 0;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    cursor: pointer;
     text-align: center;
   }
 
-  .card-corner {
-    display: flex;
-    flex-direction: column;
-    line-height: 1;
-  }
-
-  .card-corner.bottom-right {
-    transform: rotate(180deg);
-  }
-
-  .card-num { font-weight: 900; font-size: 0.8rem; }
-  .card-sym { font-size: 0.75rem; }
-
-  .card-center-icon {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .giant-symbol { font-size: 1.6rem; line-height: 1; }
-  .center-num { font-size: 0.7rem; font-weight: 800; }
-
-  /* Suit colors */
-  .suit-circle { color: #2563eb; }
-  .suit-triangle { color: #dc2626; }
-  .suit-cross { color: #16a34a; }
-  .suit-square { color: #d97706; }
-  .suit-star { color: #7c3aed; }
-  .suit-whot { color: #000000; background: linear-gradient(135deg, #fef08a 0%, #fde047 100%); }
-
-  .playable-false {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  .card-disabled-overlay {
-    position: absolute;
-    inset: 0;
-    background-color: rgba(0,0,0,0.4);
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.65rem;
-    font-weight: 800;
-    color: #f87171;
-  }
-
-  /* Table Center */
-  .table-center-area {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 3rem;
-    padding: 1rem 0;
-    border-top: 1px dashed rgba(255,255,255,0.15);
-    border-bottom: 1px dashed rgba(255,255,255,0.15);
-  }
-
-  .pile-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .pile-label {
-    font-size: 0.72rem;
-    color: #a7f3d0;
-    font-weight: 600;
-  }
-
-  .status-indicators-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .status-alert {
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    font-size: 0.8rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .suit-alert { background-color: #3b0764; color: #f5d0fe; border: 1px solid #a855f7; }
-  .pick-alert { background-color: #7f1d1d; color: #fecaca; border: 1px solid #ef4444; }
-
-  /* Logs Feed */
-  .game-logs-card {
+  .menu-option-btn.selected {
     background-color: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 12px;
-    padding: 1rem;
+    border: 2px solid #facc15;
+    color: #facc15;
+    box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
   }
 
-  .logs-header h3 {
-    margin: 0 0 0.5rem 0;
-    font-size: 0.85rem;
-    color: #38bdf8;
-  }
-
-  .logs-body {
-    max-height: 120px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-family: monospace;
-    font-size: 0.78rem;
-    color: #cbd5e1;
-  }
-
-  /* Code Explorer Tab */
-  .code-explorer-layout {
-    display: grid;
-    grid-template-columns: 280px 1fr;
-    gap: 1.25rem;
-    min-height: 600px;
-  }
-
-  .code-sidebar {
-    background-color: #0f172a;
-    border: 1px solid #1e293b;
-    border-radius: 12px;
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .sidebar-header h3 {
-    margin: 0;
-    font-size: 0.85rem;
-    color: #f8fafc;
-  }
-
-  .file-tree-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-
-  .file-item-btn {
-    background-color: transparent;
-    border: 1px solid transparent;
-    color: #94a3b8;
-    padding: 0.45rem 0.65rem;
-    border-radius: 6px;
-    font-size: 0.8rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    cursor: pointer;
-    text-align: left;
-  }
-
-  .file-item-btn:hover { background-color: #1e293b; color: #f8fafc; }
-  .file-item-btn.selected { background-color: #1e293b; border-color: #38bdf8; color: #38bdf8; font-weight: 700; }
-
-  .compiler-info-box {
-    margin-top: auto;
-    background-color: #1e293b;
-    padding: 0.75rem;
-    border-radius: 8px;
-    font-size: 0.72rem;
-    color: #94a3b8;
-  }
-
-  .compiler-info-box h4 { margin: 0 0 0.4rem 0; color: #f8fafc; }
-
-  .code-editor-card {
-    background-color: #0f172a;
-    border: 1px solid #1e293b;
-    border-radius: 12px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .editor-tabs-bar {
-    background-color: #1e293b;
-    padding: 0.5rem 1rem;
-    border-bottom: 1px solid #334155;
-  }
-
-  .editor-tab { font-weight: 700; font-size: 0.85rem; color: #38bdf8; }
-  .tab-path { font-weight: 400; font-size: 0.75rem; color: #94a3b8; margin-left: 0.4rem; }
-
-  .code-block {
-    margin: 0;
-    padding: 1.25rem;
-    font-family: Consolas, Monaco, monospace;
-    font-size: 0.82rem;
-    line-height: 1.5;
-    color: #38bdf8;
-    overflow: auto;
-    white-space: pre-wrap;
-  }
-
-  /* Terminal Tab */
-  .terminal-layout {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .terminal-card {
-    background-color: #090d16;
-    border: 1px solid #1e293b;
-    border-radius: 12px;
-    overflow: hidden;
-  }
-
-  .terminal-header {
-    background-color: #1e293b;
-    padding: 0.6rem 1rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .terminal-title {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    font-size: 0.8rem;
-    font-weight: 700;
-  }
-
-  .compile-btn {
-    background-color: #0284c7;
-    color: white;
-    border: none;
-    padding: 0.4rem 0.85rem;
-    border-radius: 6px;
-    font-size: 0.78rem;
-    font-weight: 700;
-    cursor: pointer;
-  }
-
-  .terminal-screen {
-    padding: 1.25rem;
-    font-family: monospace;
-    font-size: 0.8rem;
-    color: #a3e635;
-    min-height: 450px;
-    max-height: 600px;
-    overflow-y: auto;
-  }
-
-  .compiler-out { margin: 0 0 1rem 0; color: #38bdf8; }
-  .terminal-divider { color: #64748b; margin: 0.5rem 0; font-weight: bold; }
-  .term-line { margin: 0.2rem 0; color: #e2e8f0; }
-
-  /* Settings Tab */
-  .settings-layout {
-    max-width: 800px;
-    margin: 0 auto;
-  }
-
-  .settings-card {
-    background-color: #0f172a;
-    border: 1px solid #1e293b;
-    border-radius: 16px;
-    padding: 1.5rem;
-  }
-
-  .settings-card h2 { margin-top: 0; font-size: 1.2rem; color: #f8fafc; }
-  .settings-intro { font-size: 0.85rem; color: #94a3b8; }
-
-  .settings-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    margin-top: 1.5rem;
-  }
-
-  .setting-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background-color: #1e293b;
-    padding: 1rem;
-    border-radius: 8px;
-  }
-
-  .setting-label { display: flex; flex-direction: column; }
-  .setting-title { font-weight: 700; font-size: 0.9rem; color: #f8fafc; }
-  .setting-desc { font-size: 0.75rem; color: #94a3b8; }
-
-  /* Modal Backdrop */
-  .modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0,0,0,0.75);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 999;
-    backdrop-filter: blur(4px);
-  }
-
-  .modal-card {
-    background-color: #0f172a;
-    border: 2px solid #a855f7;
-    border-radius: 16px;
-    padding: 1.5rem;
-    max-width: 420px;
-    width: 100%;
-  }
-
-  .modal-card h3 { margin-top: 0; color: #f5d0fe; }
-
-  .suit-selection-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.75rem;
-    margin-top: 1rem;
-  }
-
-  .suit-select-btn {
-    background-color: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 8px;
-    padding: 0.85rem;
-    color: white;
-    font-weight: 800;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-  }
-
-  .suit-select-btn:hover { background-color: #334155; }
-
-  /* Secondary action button in game header */
-  .action-btn.secondary-btn {
-    background: linear-gradient(135deg, #475569, #334155);
-    color: #e2e8f0;
-    border: 1px solid #64748b;
-  }
-
-  /* KaiOS Device Layout */
-  .kaios-device-container {
-    display: grid;
-    grid-template-columns: min-content 1fr;
-    gap: 2rem;
-    align-items: start;
-    justify-content: center;
-    max-width: 900px;
-    margin: 0 auto;
-  }
-
-  /* KaiOS Phone Body */
-  .kaios-device-body {
-    background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
-    border: 3px solid #334155;
-    border-radius: 28px;
-    padding: 1rem 0.85rem 1.25rem 0.85rem;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), inset 0 2px 4px rgba(255, 255, 255, 0.1);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    width: 344px;
-    box-sizing: border-box;
-  }
-
-  .device-top-bezel {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.3rem;
-    margin-bottom: 0.6rem;
-  }
-
-  .earpiece-speaker {
-    width: 48px;
-    height: 4px;
-    background-color: #475569;
-    border-radius: 4px;
-  }
-
-  .device-brand-text {
-    font-size: 0.65rem;
-    font-weight: 800;
+  .menu-prompt-text {
+    font-size: 0.58rem;
     color: #94a3b8;
     letter-spacing: 0.08em;
-    text-transform: uppercase;
   }
 
-  /* Exact 320x240 Pixel Screen Viewport */
-  .kaios-screen-viewport {
-    width: 320px;
-    height: 240px;
-    background-color: #022c22;
-    border: 2px solid #047857;
-    border-radius: 6px;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.6);
-    user-select: none;
-    font-family: system-ui, -apple-system, sans-serif;
-  }
-
-  /* KaiOS Status Bar (320px wide) */
-  .kaios-status-bar {
-    height: 18px;
-    background-color: #064e3b;
-    border-bottom: 1px solid #047857;
+  /* Shared Softkey Bar */
+  .softkey-bar {
+    width: 100%;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0 6px;
-    font-size: 0.62rem;
-    color: #a7f3d0;
-    font-weight: 700;
-  }
-
-  /* KaiOS Game Canvas inside 320x240 */
-  .kaios-game-screen {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 4px 6px;
+    padding: 0 2px;
     box-sizing: border-box;
-    background: radial-gradient(circle at 50% 50%, #064e3b 0%, #022c22 100%);
-  }
-
-  /* Bot Bar inside 320x240 */
-  .kaios-bot-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background-color: rgba(15, 23, 42, 0.6);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.68rem;
-  }
-
-  .kaios-avatar { font-size: 0.8rem; }
-  .kaios-bot-name { color: #fef08a; font-weight: 700; }
-  .kaios-turn-badge {
-    background-color: #1e293b;
-    color: #94a3b8;
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 0.6rem;
-    font-weight: 800;
-  }
-  .kaios-turn-badge.turn-active { background-color: #0284c7; color: #fff; }
-
-  /* Table Center Area inside 320x240 */
-  .kaios-table-center {
-    display: flex;
-    align-items: center;
-    justify-content: space-around;
-    padding: 4px 0;
-  }
-
-  .kaios-market-btn {
-    background: transparent;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .kaios-card-back-icon {
-    width: 44px;
-    height: 60px;
-    background: linear-gradient(135deg, #1e3a8a 0%, #1e1b4b 100%);
-    border: 1.5px solid #3b82f6;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #60a5fa;
-    font-weight: 900;
-    font-size: 0.6rem;
-  }
-
-  .kaios-market-count {
-    font-size: 0.6rem;
-    color: #a7f3d0;
-    margin-top: 2px;
-    font-weight: 600;
-  }
-
-  .kaios-top-card-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .kaios-card {
-    width: 44px;
-    height: 60px;
-    background-color: #ffffff;
-    border: 1.5px solid #cbd5e1;
-    border-radius: 4px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: space-between;
-    padding: 2px;
-    box-sizing: border-box;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.4);
-  }
-
-  .kaios-card-num { font-weight: 900; font-size: 0.7rem; line-height: 1; }
-  .kaios-card-sym { font-size: 1.1rem; line-height: 1; }
-  .kaios-card-label { font-size: 0.6rem; color: #a7f3d0; margin-top: 2px; font-weight: 600; }
-
-  .kaios-status-callouts {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    max-width: 90px;
-  }
-
-  .kaios-suit-badge {
-    background-color: #3b0764;
-    color: #f5d0fe;
-    border: 1px solid #a855f7;
-    padding: 2px 4px;
-    border-radius: 3px;
-    font-size: 0.58rem;
-    font-weight: 800;
-  }
-
-  .kaios-pick-badge {
-    background-color: #7f1d1d;
-    color: #fecaca;
-    border: 1px solid #ef4444;
-    padding: 2px 4px;
-    border-radius: 3px;
-    font-size: 0.58rem;
-    font-weight: 800;
-  }
-
-  /* Player Hand Scroll in 320x240 */
-  .kaios-player-hand-container {
-    background-color: rgba(15, 23, 42, 0.7);
-    border-radius: 4px;
-    padding: 3px;
-  }
-
-  .kaios-hand-scroll {
-    display: flex;
-    gap: 4px;
-    overflow-x: auto;
-    padding-bottom: 2px;
-  }
-
-  .kaios-hand-card {
-    min-width: 30px;
-    height: 42px;
-    background-color: #ffffff;
-    border: 1.5px solid #cbd5e1;
-    border-radius: 3px;
-    padding: 1px 2px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: space-between;
-    cursor: pointer;
-    box-sizing: border-box;
-    flex-shrink: 0;
-  }
-
-  .kaios-hand-card.focused {
-    border-color: #f59e0b;
-    outline: 2px solid #fbbf24;
-    transform: translateY(-2px);
-  }
-
-  .kaios-hand-card.disabled {
-    opacity: 0.45;
-  }
-
-  .kaios-mini-num { font-weight: 900; font-size: 0.6rem; line-height: 1; }
-  .kaios-mini-sym { font-size: 0.75rem; line-height: 1; }
-
-  /* Bottom Softkey Bar inside 320x240 */
-  .kaios-softkey-bar {
-    height: 20px;
-    background-color: #0f172a;
-    border-top: 1px solid #334155;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 4px;
   }
 
   .softkey {
     background: transparent;
     border: none;
-    color: #38bdf8;
-    font-size: 0.62rem;
-    font-weight: 800;
+    color: #facc15;
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.05em;
     cursor: pointer;
-    padding: 1px 4px;
+    text-shadow: 1px 1px 0 #000;
   }
-  .softkey.center { color: #fef08a; }
 
-  /* Physical Phone Keypad Below Screen */
-  .kaios-keypad {
-    width: 320px;
-    margin-top: 0.75rem;
+  /* OVERLAY SCREENS (How to play & Settings) */
+  .kaios-overlay-screen {
+    width: 100%;
+    height: 100%;
+    background-color: #064e3b;
+    border: 3px solid #d97706;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    justify-content: space-between;
+    padding: 8px 10px;
   }
 
-  .keypad-softkeys-row {
+  .overlay-header h2 {
+    color: #facc15;
+    font-size: 1.1rem;
+    margin: 0;
+    text-align: center;
+    text-shadow: 1.5px 1.5px 0 #000;
+  }
+
+  .rules-body, .settings-body {
+    font-size: 0.62rem;
+    color: #f8fafc;
+    line-height: 1.45;
+  }
+
+  .rules-body p {
+    margin: 3px 0;
+  }
+
+  .hl {
+    color: #facc15;
+  }
+
+  .setting-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 8px;
+    background-color: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    margin-bottom: 5px;
+    cursor: pointer;
+  }
+
+  .setting-row.selected {
+    border-color: #facc15;
+    background-color: #1e293b;
+    color: #facc15;
+  }
+
+  .setting-row .val {
+    font-weight: 800;
+    color: #38bdf8;
+  }
+
+  /* IN-GAME TABLE SCREEN (kaios_ss_1787656302578.png) */
+  .kaios-game-table {
+    width: 100%;
+    height: 100%;
+    background-color: #064e3b;
+    padding: 4px;
+    box-sizing: border-box;
+    position: relative;
+  }
+
+  .table-border-frame {
+    width: 100%;
+    height: 100%;
+    border: 2px solid #d97706;
+    outline: 1px solid #b45309;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 4px 6px;
+    background: radial-gradient(circle at 50% 50%, #065f46 0%, #022c22 100%);
+    position: relative;
+  }
+
+  /* Table Header */
+  .table-header-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0 0.5rem;
+    height: 32px;
   }
 
-  .keypad-btn {
-    background-color: #334155;
-    color: #f8fafc;
-    border: 1px solid #475569;
-    border-radius: 6px;
-    padding: 0.4rem 0.85rem;
+  .cpu-label {
+    color: #38bdf8;
+    font-size: 0.7rem;
+    font-weight: 900;
+    text-shadow: 1px 1px 0 #000;
+  }
+
+  .cpu-hand-cards {
+    display: flex;
+    align-items: center;
+    position: relative;
+    height: 28px;
+  }
+
+  .cpu-card-back {
+    width: 20px;
+    height: 28px;
+    border-radius: 2px;
+    box-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+  }
+
+  .bot-more-badge {
+    color: #fef08a;
+    font-size: 0.6rem;
     font-weight: 800;
-    font-size: 0.72rem;
-    cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    margin-left: 2px;
   }
 
-  .keypad-btn:active { transform: translateY(1px); }
-  .keypad-btn.call-btn { background-color: #16a34a; border-color: #22c55e; }
+  .turn-banner {
+    color: #e2e8f0;
+    font-size: 0.65rem;
+    font-weight: 900;
+    text-shadow: 1px 1px 0 #000;
+  }
 
-  /* D-Pad Layout */
-  .dpad-container {
+  .turn-banner.player-turn {
+    color: #4ade80;
+  }
+
+  /* Table Playing Field */
+  .table-center-area {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 16px;
+    position: relative;
+    height: 110px;
+    padding-left: 12px;
+  }
+
+  .market-deck-group {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 3px;
-    margin: 0.2rem 0;
+    cursor: pointer;
+    position: relative;
   }
 
-  .dpad-middle-row {
+  .market-deck-group.focused img {
+    outline: 2.5px solid #facc15;
+    border-radius: 4px;
+    transform: translateY(-2px);
+  }
+
+  .card-stack-shadow {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 48px;
+    height: 68px;
+    background-color: rgba(0,0,0,0.5);
+    border-radius: 4px;
+  }
+
+  .market-card-img {
+    width: 48px;
+    height: 68px;
+    border-radius: 4px;
+    box-shadow: 0 3px 6px rgba(0,0,0,0.5);
+    position: relative;
+    z-index: 2;
+  }
+
+  .market-label-text {
+    color: #facc15;
+    font-size: 0.62rem;
+    font-weight: 900;
+    margin-top: 3px;
+    text-shadow: 1px 1px 0 #000;
+  }
+
+  .played-card-group {
+    position: relative;
+  }
+
+  .played-card-img {
+    width: 52px;
+    height: 74px;
+    border-radius: 4px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.6);
+  }
+
+  .table-callouts {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-left: 8px;
+  }
+
+  .suit-callout-badge {
+    background-color: #3b0764;
+    border: 1px solid #a855f7;
+    color: #f5d0fe;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.58rem;
+    font-weight: 800;
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: 4px;
   }
 
-  .dpad-btn {
-    width: 44px;
-    height: 32px;
-    background-color: #334155;
-    color: #38bdf8;
-    border: 1px solid #475569;
-    border-radius: 6px;
-    font-weight: 900;
-    font-size: 0.75rem;
+  .callout-suit-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .pick-callout-badge {
+    background-color: #7f1d1d;
+    border: 1px solid #ef4444;
+    color: #fecaca;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.58rem;
+    font-weight: 800;
+  }
+
+  /* Player Hand Area */
+  .player-hand-container {
+    height: 68px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-end;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .hand-cards-flex {
+    display: flex;
+    gap: 0px;
+    padding-right: 6px;
+  }
+
+  .hand-card-wrapper {
+    width: 40px;
+    height: 58px;
+    margin-left: -14px;
     cursor: pointer;
+    transition: transform 0.1s ease;
+    position: relative;
+  }
+
+  .hand-card-wrapper:first-child {
+    margin-left: 0;
+  }
+
+  .hand-card-img {
+    width: 100%;
+    height: 100%;
+    border-radius: 3px;
+    box-shadow: -2px 2px 5px rgba(0,0,0,0.4);
+  }
+
+  .hand-card-wrapper.focused {
+    transform: translateY(-8px);
+    z-index: 10;
+  }
+
+  .hand-card-wrapper.focused.valid .hand-card-img {
+    outline: 2.5px solid #22c55e;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.8);
+  }
+
+  .hand-card-wrapper.focused.invalid .hand-card-img {
+    outline: 2.5px solid #ef4444;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+  }
+
+  /* WHOT Suit Modal */
+  .whot-suit-modal-backdrop, .gameover-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(0,0,0,0.75);
     display: flex;
     align-items: center;
     justify-content: center;
+    z-index: 50;
   }
 
-  .dpad-btn.center {
-    background-color: #0284c7;
-    color: #fff;
-    border-color: #38bdf8;
-    width: 50px;
-    height: 34px;
+  .whot-suit-modal {
+    background-color: #0f172a;
+    border: 2px solid #facc15;
+    border-radius: 8px;
+    padding: 8px 12px;
+    width: 260px;
+    text-align: center;
   }
 
-  /* Numeric Keypad Grid */
-  .num-keypad {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.4rem;
+  .whot-suit-modal h3 {
+    color: #facc15;
+    font-size: 0.85rem;
+    margin: 0 0 6px 0;
   }
 
-  .num-btn {
+  .suits-grid {
+    display: flex;
+    justify-content: space-around;
+    gap: 4px;
+  }
+
+  .suit-select-btn {
     background-color: #1e293b;
     border: 1px solid #334155;
     border-radius: 6px;
-    padding: 0.4rem 0.2rem;
-    color: #f8fafc;
-    font-weight: 800;
-    font-size: 0.85rem;
-    cursor: pointer;
+    padding: 4px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    line-height: 1;
+    cursor: pointer;
+    width: 44px;
   }
 
-  .num-btn .sub {
-    font-size: 0.55rem;
-    color: #94a3b8;
-    margin-top: 2px;
-    font-weight: 500;
+  .suit-select-btn.focused {
+    border-color: #facc15;
+    background-color: #334155;
   }
 
-  /* KaiOS Info Specs Panel */
-  .kaios-info-panel {
+  .suit-key-num {
+    color: #facc15;
+    font-size: 0.6rem;
+    font-weight: 900;
+  }
+
+  .modal-suit-icon, .modal-suit-img {
+    width: 22px;
+    height: 22px;
+    margin: 2px 0;
+  }
+
+  .suit-name-text {
+    color: #f8fafc;
+    font-size: 0.5rem;
+    font-weight: 700;
+  }
+
+  /* Game Over Modal */
+  .gameover-modal {
     background-color: #0f172a;
-    border: 1px solid #1e293b;
-    border-radius: 16px;
-    padding: 1.5rem;
+    border: 2px solid #facc15;
+    border-radius: 8px;
+    padding: 12px;
+    width: 250px;
+    text-align: center;
+    color: #f8fafc;
   }
 
-  .info-badge {
-    display: inline-block;
-    background-color: #0284c7;
+  .gameover-modal h2 {
+    color: #facc15;
+    font-size: 1.15rem;
+    margin: 0 0 6px 0;
+  }
+
+  .gameover-modal p {
+    font-size: 0.72rem;
+    margin: 4px 0 10px 0;
+  }
+
+  .gameover-softkeys {
+    display: flex;
+    justify-content: space-around;
+    gap: 8px;
+  }
+
+  .modal-btn {
+    background-color: #16a34a;
     color: #fff;
-    padding: 0.25rem 0.6rem;
-    border-radius: 20px;
-    font-size: 0.7rem;
-    font-weight: 800;
-    margin-bottom: 0.5rem;
+    border: none;
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: 0.65rem;
+    font-weight: 900;
   }
 
-  .kaios-info-panel h3 { margin-top: 0; color: #f8fafc; }
-  .kaios-info-panel p { color: #cbd5e1; font-size: 0.85rem; line-height: 1.5; }
-
-  .controls-guide h4 { color: #38bdf8; font-size: 0.85rem; margin-bottom: 0.5rem; }
-  .controls-guide ul { margin: 0; padding-left: 1.25rem; color: #94a3b8; font-size: 0.8rem; line-height: 1.6; }
+  .modal-btn.secondary {
+    background-color: #475569;
+  }
 </style>

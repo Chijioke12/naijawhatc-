@@ -1,6 +1,6 @@
 {
-  "name": "Naija Whot C++ Game",
-  "description": "Complete C++ implementation of the Naija Whot card game, featuring a native C++ engine, C++ game loop, compiler terminal, and live C++ source explorer.",
+  "name": "Naija Whot Classic KaiOS Edition",
+  "description": "Authentic 320x240 KaiOS Naija Whot card game, featuring native game graphics, original sound effects, and physical keypad navigation.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
