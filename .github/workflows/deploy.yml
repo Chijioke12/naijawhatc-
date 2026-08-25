@@ -1,0 +1,79 @@
+name: Compile C++ to asm.js & Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+# Permissions required for GitHub Pages deployment
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Emscripten (emsdk) for Legacy asm.js (WASM=0)
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.50
+          actions-cache-folder: 'emsdk-cache'
+
+      - name: Verify Emscripten Compiler
+        run: |
+          emcc --version
+
+      - name: Compile C++ Engine to asm.js (KaiOS RAM Optimized)
+        run: |
+          mkdir -p public
+          emcc -std=c++17 -O2 -I./src/cpp \
+            -s WASM=0 \
+            -s SINGLE_FILE=1 \
+            -s ALLOW_MEMORY_GROWTH=1 \
+            -s EXIT_RUNTIME=1 \
+            src/cpp/WhotGameEngine.cpp src/cpp/main.cpp \
+            -o public/whot_engine_asm.js
+          echo "Emscripten asm.js build successfully generated in public/whot_engine_asm.js"
+          ls -lh public/whot_engine_asm.js
+
+      - name: Install Node Dependencies
+        run: npm ci || npm install
+
+      - name: Build Web Application (Outputs to dist/)
+        run: npm run build
+
+      - name: Ensure asm.js bundle is included in dist/
+        run: |
+          mkdir -p dist
+          cp public/whot_engine_asm.js dist/ || true
+          ls -lh dist/
+
+      - name: Upload GitHub Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
