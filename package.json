@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
-    "postbuild": "node scripts/bundle_kaios.cjs",
+    "postbuild": "node scripts/strip_js_fallback.cjs && node scripts/bundle_kaios.cjs",
+    "generate:assets": "node scripts/generate_whot_assets.js",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"

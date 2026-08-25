@@ -80,6 +80,11 @@
   let activeEngineLabel = 'AI STUDIO DEV (TS MIRROR)';
 
   async function checkActiveEngine() {
+    if (engine.isEmscriptenActive() || (window as any).WHOT_EMSCRIPTEN_REQUIRED) {
+      isEmscriptenCppActive = true;
+      activeEngineLabel = 'PROD: EMSCRIPTEN C++ BINARY';
+      return;
+    }
     try {
       const res = await fetch('./whot_engine_asm.js', { method: 'GET' });
       const contentType = res.headers.get('content-type') || '';

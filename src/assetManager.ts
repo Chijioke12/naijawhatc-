@@ -1,17 +1,26 @@
-// Ultra-lightweight Vector Asset Manager for KaiOS (0 KB Bundle Footprint)
+// Asset Manager for KaiOS / Web
+// Supports pre-rendered PNG assets from assets_base64.json and vector SVG Base64 fallbacks
 
 let asyncAssets: Record<string, string> = {};
+const assetCache: Record<string, string> = {};
 
+// Load pre-rendered PNG assets
 if (typeof window !== 'undefined') {
   fetch('./assets_base64.json')
-    .then(r => r.json())
+    .then(r => {
+      if (r.ok) return r.json();
+      throw new Error('No assets_base64.json');
+    })
     .then(data => {
-      asyncAssets = data || {};
+      if (data && typeof data === 'object') {
+        asyncAssets = data;
+        console.log('[assetManager] Loaded pre-rendered PNG assets from assets_base64.json');
+      }
     })
     .catch(() => {});
 }
 
-// Colors matching Nigerian Whot standard
+// Nigerian Whot Standard Suit Colors
 const SUIT_COLORS: Record<string, string> = {
   circle: '#dc2626',   // Red
   triangle: '#16a34a', // Green
@@ -35,7 +44,6 @@ function renderSuitSvgPath(suit: string, cx: number, cy: number, size: number, c
     case 'square':
       return `<rect x="${cx - half * 0.85}" y="${cy - half * 0.85}" width="${size * 0.85}" height="${size * 0.85}" rx="3" fill="${color}"/>`;
     case 'star': {
-      // 5-point star
       const rOuter = half;
       const rInner = half * 0.45;
       let pts = '';
@@ -53,25 +61,31 @@ function renderSuitSvgPath(suit: string, cx: number, cy: number, size: number, c
   }
 }
 
-// Generate crisp SVG Card Data URL
-function createCardSvg(suit: string, number: number): string {
+export function encodeSvgDataUri(svgString: string): string {
+  try {
+    if (typeof btoa === 'function') {
+      return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgString)))}`;
+    }
+  } catch {}
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svgString)}`;
+}
+
+// Generate Card SVG String
+function generateCardSvgString(suit: string, number: number): string {
   const isWhot = suit === 'whot' || number === 20;
   const color = isWhot ? '#b45309' : (SUIT_COLORS[suit] || '#1e293b');
   const numStr = number.toString();
   const subText = number === 1 ? '(HOLD ON)' : number === 2 ? '(PICK 2)' : number === 5 ? '(PICK 3)' : number === 8 ? '(SUSPEND)' : number === 14 ? '(GEN MKT)' : '';
 
-  const svg = `
+  return `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 170" width="120" height="170">
   <defs>
-    <linearGradient id="cardBg" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="cardBg_${suit}_${number}" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#ffffff"/>
       <stop offset="100%" stop-color="#f1f5f9"/>
     </linearGradient>
-    <filter id="cardShadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.2"/>
-    </filter>
   </defs>
-  <rect x="2" y="2" width="116" height="166" rx="9" fill="url(#cardBg)" stroke="#cbd5e1" stroke-width="2"/>
+  <rect x="2" y="2" width="116" height="166" rx="9" fill="url(#cardBg_${suit}_${number})" stroke="#cbd5e1" stroke-width="2"/>
   
   <!-- Corner Top-Left -->
   <text x="12" y="24" font-family="'Plus Jakarta Sans', Arial, sans-serif" font-weight="900" font-size="20" fill="${color}">${numStr}</text>
@@ -92,13 +106,10 @@ function createCardSvg(suit: string, number: number): string {
        ${subText ? `<text x="60" y="125" font-family="'Plus Jakarta Sans', Arial, sans-serif" font-weight="800" font-size="10" fill="${color}" text-anchor="middle">${subText}</text>` : ''}`
   }
 </svg>`.trim();
-
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-// Generate Card Back Pattern
-function createCardBackSvg(): string {
-  const svg = `
+function generateCardBackSvgString(): string {
+  return `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 170" width="120" height="170">
   <defs>
     <pattern id="cardBackPattern" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -113,30 +124,47 @@ function createCardBackSvg(): string {
   <rect x="26" y="55" width="68" height="60" rx="6" fill="#1e3a8a" stroke="#facc15" stroke-width="2.5"/>
   <text x="60" y="91" font-family="'Plus Jakarta Sans', Arial, sans-serif" font-weight="900" font-size="16" fill="#facc15" text-anchor="middle" letter-spacing="1">WHOT</text>
 </svg>`.trim();
-
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
 export function getCardImage(suit: string, number: number): string {
   const key = `card_${suit}_${number}`;
   if (asyncAssets[key]) return asyncAssets[key];
-  return createCardSvg(suit, number);
+  if (assetCache[key]) return assetCache[key];
+
+  const svgStr = generateCardSvgString(suit, number);
+  const dataUrl = encodeSvgDataUri(svgStr);
+  assetCache[key] = dataUrl;
+  return dataUrl;
 }
 
 export function getCardBackImage(): string {
-  if (asyncAssets['card_back']) return asyncAssets['card_back'];
-  return createCardBackSvg();
+  const key = 'card_back';
+  if (asyncAssets[key]) return asyncAssets[key];
+  if (assetCache[key]) return assetCache[key];
+
+  const svgStr = generateCardBackSvgString();
+  const dataUrl = encodeSvgDataUri(svgStr);
+  assetCache[key] = dataUrl;
+  return dataUrl;
 }
 
 export function getSuitIcon(suit: string): string {
   const key = `suit_${suit}`;
   if (asyncAssets[key]) return asyncAssets[key];
+  if (assetCache[key]) return assetCache[key];
+
   const color = SUIT_COLORS[suit] || '#facc15';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">${renderSuitSvgPath(suit, 16, 16, 26, color)}</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  const dataUrl = encodeSvgDataUri(svg);
+  assetCache[key] = dataUrl;
+  return dataUrl;
 }
 
 export function getToggleImage(enabled: boolean): string {
+  const key = enabled ? 'toggle_on' : 'toggle_off';
+  if (asyncAssets[key]) return asyncAssets[key];
+  if (assetCache[key]) return assetCache[key];
+
   const color = enabled ? '#22c55e' : '#64748b';
   const label = enabled ? 'ON' : 'OFF';
   const cx = enabled ? 34 : 14;
@@ -146,7 +174,9 @@ export function getToggleImage(enabled: boolean): string {
   <circle cx="${cx}" cy="12" r="9" fill="#ffffff" filter="drop-shadow(0 1px 2px rgba(0,0,0,0.4))"/>
   <text x="${enabled ? 16 : 32}" y="16" font-family="'Plus Jakarta Sans', Arial, sans-serif" font-weight="900" font-size="9" fill="#ffffff" text-anchor="middle">${label}</text>
 </svg>`.trim();
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  const dataUrl = encodeSvgDataUri(svg);
+  assetCache[key] = dataUrl;
+  return dataUrl;
 }
 
 export const ICON_GEAR = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#facc15" stroke="#854d0e" stroke-width="1.5"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path fill-rule="evenodd" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" clip-rule="evenodd"/></svg>')}`;
