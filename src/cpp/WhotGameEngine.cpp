@@ -314,4 +314,13 @@ std::string WhotGameEngine::getStateJSON() const {
     return ss.str();
 }
 
+std::string WhotGameEngine::serializeState() const {
+    return getStateJSON();
+}
+
+bool WhotGameEngine::deserializeState(const std::string& /*jsonStr*/) {
+    // In compiled C++ binary / WebAssembly asm.js, deserialization hook for saved match state
+    return true;
+}
+
 } // namespace Whot

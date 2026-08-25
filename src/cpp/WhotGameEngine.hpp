@@ -44,6 +44,8 @@ public:
 
     std::string getAsciiGameBoard() const;
     std::string getStateJSON() const;
+    std::string serializeState() const;
+    bool deserializeState(const std::string& jsonStr);
 
 private:
     TurnResult processPlayedCard(Player& player, Player& opponent, Card card, Suit requestedSuit);

@@ -373,6 +373,36 @@ export class CppWhotGameEngine {
     return hand.reduce((acc, c) => acc + cardScoreValue(c), 0);
   }
 
+  public serialize() {
+    return {
+      humanHand: this.humanHand,
+      botHand: this.botHand,
+      marketPile: this.marketPile,
+      playedPile: this.playedPile,
+      requestedSuit: this.requestedSuit,
+      pendingPickCount: this.pendingPickCount,
+      currentTurn: this.currentTurn,
+      isGameOver: this.isGameOver,
+      winnerId: this.winnerId,
+      logs: this.logs
+    };
+  }
+
+  public deserialize(data: any): boolean {
+    if (!data || !Array.isArray(data.humanHand) || !Array.isArray(data.botHand)) return false;
+    this.humanHand = data.humanHand;
+    this.botHand = data.botHand;
+    this.marketPile = data.marketPile || [];
+    this.playedPile = data.playedPile || [];
+    this.requestedSuit = data.requestedSuit || 'none';
+    this.pendingPickCount = data.pendingPickCount || 0;
+    this.currentTurn = typeof data.currentTurn === 'number' ? data.currentTurn : 0;
+    this.isGameOver = !!data.isGameOver;
+    this.winnerId = data.winnerId || '';
+    this.logs = data.logs || [];
+    return true;
+  }
+
   public getStateJSON(): GameStateJSON {
     return {
       isGameOver: this.isGameOver,
