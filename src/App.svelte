@@ -3,8 +3,28 @@
   import { CppWhotGameEngine, suitToSymbol, type Card, type Suit, type GameStateJSON } from './cppEngine';
   import { CPP_SOURCE_FILES, type CppFile } from './cppSourceCode';
 
-  // Active view tab: 'game' | 'code' | 'terminal' | 'settings'
-  let activeTab: 'game' | 'code' | 'terminal' | 'settings' = 'game';
+  // Active view tab: 'game' | 'kaios' | 'code' | 'terminal' | 'settings'
+  let activeTab: 'game' | 'kaios' | 'code' | 'terminal' | 'settings' = 'game';
+  let kaiosSelectedCardIndex = 0;
+
+  function handleKeyDown(event: KeyboardEvent) {
+    if (activeTab !== 'kaios') return;
+    if (event.key === 'ArrowLeft') {
+      kaiosSelectedCardIndex = Math.max(0, kaiosSelectedCardIndex - 1);
+    } else if (event.key === 'ArrowRight') {
+      kaiosSelectedCardIndex = Math.min(Math.max(0, gameState.human.hand.length - 1), kaiosSelectedCardIndex + 1);
+    } else if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowUp') {
+      handlePlayCard(kaiosSelectedCardIndex);
+    } else if (event.key === 'ArrowDown' || event.key === 'd' || event.key === '0') {
+      handleDrawMarket();
+    } else if (showWhotSuitModal) {
+      if (event.key === '1') handleSelectWhotSuit('circle');
+      if (event.key === '2') handleSelectWhotSuit('triangle');
+      if (event.key === '3') handleSelectWhotSuit('cross');
+      if (event.key === '4') handleSelectWhotSuit('square');
+      if (event.key === '5') handleSelectWhotSuit('star');
+    }
+  }
 
   // Game Engine instance
   let engine = new CppWhotGameEngine();
@@ -199,6 +219,10 @@
     appendTerminalLog("System initialized. Native C++ Whot Engine ready.");
     appendTerminalLog("Compiler detected: g++ 12.3.0 & Emscripten emcc (Legacy asm.js target with WASM=0).");
     appendTerminalLog("GitHub Pages CI/CD workflow configured at .github/workflows/deploy.yml");
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   });
 </script>
 
@@ -216,6 +240,9 @@
     <nav class="nav-tabs">
       <button class="nav-btn" class:active={activeTab === 'game'} on:click={() => { activeTab = 'game'; playSound('click'); }}>
         <span class="nav-icon">🎮</span> Play Whot Game
+      </button>
+      <button class="nav-btn" class:active={activeTab === 'kaios'} on:click={() => { activeTab = 'kaios'; playSound('click'); }}>
+        <span class="nav-icon">📱</span> 320x240 KaiOS Screen
       </button>
       <button class="nav-btn" class:active={activeTab === 'code'} on:click={() => { activeTab = 'code'; playSound('click'); }}>
         <span class="nav-icon">💻</span> C++ Source Code
@@ -381,6 +408,153 @@
             {#each gameState.logs as log}
               <div class="log-line">{log}</div>
             {/each}
+          </div>
+        </div>
+      </div>
+
+    {:else if activeTab === 'kaios'}
+      <!-- KaiOS 320x240 Device Screen Viewport -->
+      <div class="kaios-device-container">
+        <div class="kaios-device-body">
+          <!-- Device Top Bezel -->
+          <div class="device-top-bezel">
+            <div class="earpiece-speaker"></div>
+            <div class="device-brand-text">KaiOS 2.5 • 320x240 Display</div>
+          </div>
+
+          <!-- 320x240 Pixel Screen Viewport -->
+          <div class="kaios-screen-viewport">
+            <!-- KaiOS Status Bar (320px x 20px) -->
+            <div class="kaios-status-bar">
+              <span class="status-left">📶 4G</span>
+              <span class="status-title">Naija Whot C++</span>
+              <span class="status-right">85% 🔋</span>
+            </div>
+
+            <!-- KaiOS Game Canvas (320px x 220px) -->
+            <div class="kaios-game-screen">
+              <!-- Bot Info Header -->
+              <div class="kaios-bot-bar">
+                <span class="kaios-avatar">🤖</span>
+                <span class="kaios-bot-name">Bot: {gameState.bot.cardCount} cards</span>
+                <span class="kaios-turn-badge" class:turn-active={gameState.currentTurnPlayerIndex === 1}>
+                  {gameState.currentTurnPlayerIndex === 1 ? 'BOT THINKING' : 'YOUR TURN'}
+                </span>
+              </div>
+
+              <!-- Center Table Area -->
+              <div class="kaios-table-center">
+                <!-- Market Pile -->
+                <button class="kaios-market-btn" on:click={handleDrawMarket} disabled={gameState.currentTurnPlayerIndex !== 0 || gameState.isGameOver}>
+                  <div class="kaios-card-back-icon">WHOT</div>
+                  <span class="kaios-market-count">Deck ({gameState.deck.marketCount})</span>
+                </button>
+
+                <!-- Top Played Card -->
+                <div class="kaios-top-card-container">
+                  {#if gameState.deck.topCard}
+                    {@const top = gameState.deck.topCard}
+                    <div class="kaios-card suit-{top.suit}">
+                      <span class="kaios-card-num">{top.number === 20 ? 'W' : top.number}</span>
+                      <span class="kaios-card-sym">{suitToSymbol(top.suit)}</span>
+                    </div>
+                  {/if}
+                  <span class="kaios-card-label">Played Top</span>
+                </div>
+
+                <!-- Status Callouts -->
+                <div class="kaios-status-callouts">
+                  {#if gameState.deck.requestedSuit !== 'none'}
+                    <div class="kaios-suit-badge">
+                      👑 {gameState.deck.requestedSuit.toUpperCase()} {suitToSymbol(gameState.deck.requestedSuit as Suit)}
+                    </div>
+                  {/if}
+                  {#if gameState.deck.pendingPickCount > 0}
+                    <div class="kaios-pick-badge">
+                      ⚠️ PICK +{gameState.deck.pendingPickCount}
+                    </div>
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Human Player Hand Bar -->
+              <div class="kaios-player-hand-container">
+                <div class="kaios-hand-scroll">
+                  {#each gameState.human.hand as card, idx}
+                    {@const isValid = engine.isValidPlay(card)}
+                    {@const isFocused = idx === kaiosSelectedCardIndex}
+                    <button
+                      class="kaios-hand-card suit-{card.suit}"
+                      class:focused={isFocused}
+                      class:disabled={!isValid || gameState.currentTurnPlayerIndex !== 0}
+                      on:click={() => { kaiosSelectedCardIndex = idx; handlePlayCard(idx); }}
+                    >
+                      <span class="kaios-mini-num">{card.number === 20 ? 'W' : card.number}</span>
+                      <span class="kaios-mini-sym">{suitToSymbol(card.suit)}</span>
+                    </button>
+                  {/each}
+                </div>
+              </div>
+
+              <!-- KaiOS Bottom Softkey Bar (320px x 22px) -->
+              <div class="kaios-softkey-bar">
+                <button class="softkey left" on:click={handleDrawMarket}>Draw</button>
+                <button class="softkey center" on:click={() => handlePlayCard(kaiosSelectedCardIndex)}>PLAY</button>
+                <button class="softkey right" on:click={handleStartNewGame}>New Game</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Phone Keypad Controls -->
+          <div class="kaios-keypad">
+            <div class="keypad-softkeys-row">
+              <button class="keypad-btn softkey-btn" on:click={handleDrawMarket}>LSK</button>
+              <button class="keypad-btn call-btn">📞</button>
+              <button class="keypad-btn softkey-btn" on:click={handleStartNewGame}>RSK</button>
+            </div>
+
+            <!-- D-Pad Directional Controls -->
+            <div class="dpad-container">
+              <button class="dpad-btn up" on:click={() => handlePlayCard(kaiosSelectedCardIndex)}>▲</button>
+              <div class="dpad-middle-row">
+                <button class="dpad-btn left" on:click={() => { kaiosSelectedCardIndex = Math.max(0, kaiosSelectedCardIndex - 1); }}>◀</button>
+                <button class="dpad-btn center" on:click={() => handlePlayCard(kaiosSelectedCardIndex)}>OK</button>
+                <button class="dpad-btn right" on:click={() => { kaiosSelectedCardIndex = Math.min(Math.max(0, gameState.human.hand.length - 1), kaiosSelectedCardIndex + 1); }}>▶</button>
+              </div>
+              <button class="dpad-btn down" on:click={handleDrawMarket}>▼</button>
+            </div>
+
+            <!-- Numeric Keypad -->
+            <div class="num-keypad">
+              <button class="num-btn" on:click={() => handleSelectWhotSuit('circle')}>1 <span class="sub">● Circle</span></button>
+              <button class="num-btn" on:click={() => handleSelectWhotSuit('triangle')}>2 <span class="sub">▲ Tri</span></button>
+              <button class="num-btn" on:click={() => handleSelectWhotSuit('cross')}>3 <span class="sub">✖ Cross</span></button>
+              <button class="num-btn" on:click={() => handleSelectWhotSuit('square')}>4 <span class="sub">■ Sq</span></button>
+              <button class="num-btn" on:click={() => handleSelectWhotSuit('star')}>5 <span class="sub">★ Star</span></button>
+              <button class="num-btn">6 <span class="sub">MNO</span></button>
+              <button class="num-btn">7 <span class="sub">PQRS</span></button>
+              <button class="num-btn">8 <span class="sub">TUV</span></button>
+              <button class="num-btn">9 <span class="sub">WXYZ</span></button>
+              <button class="num-btn">*</button>
+              <button class="num-btn" on:click={handleDrawMarket}>0 <span class="sub">Draw</span></button>
+              <button class="num-btn">#</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- KaiOS Device Screen Specs Panel -->
+        <div class="kaios-info-panel">
+          <div class="info-badge">KaiOS 320x240 Target</div>
+          <h3>📱 320x240 Pixel Screen Emulator</h3>
+          <p>This screen is locked to exact <strong>320 × 240 pixel resolution</strong> matching KaiOS feature phones (Nokia 8110, Nokia 2720, JioPhone) powered by Emscripten <code>asm.js</code> (WASM=0).</p>
+          <div class="controls-guide">
+            <h4>🎮 Physical Keypad & Keyboard Shortcuts:</h4>
+            <ul>
+              <li><strong>Left / Right Arrows (◀ / ▶):</strong> Navigate and highlight hand cards</li>
+              <li><strong>OK / Center Key (Enter / Space / ▲):</strong> Play highlighted card</li>
+              <li><strong>LSK / Down Key (▼ / Key D / 0):</strong> Draw from market deck</li>
+              <li><strong>Number Keys 1 to 5:</strong> Call WHOT suits (Circle, Triangle, Cross, Square, Star)</li>
+            </ul>
           </div>
         </div>
       </div>
@@ -1158,4 +1332,401 @@
   }
 
   .suit-select-btn:hover { background-color: #334155; }
+
+  /* Secondary action button in game header */
+  .action-btn.secondary-btn {
+    background: linear-gradient(135deg, #475569, #334155);
+    color: #e2e8f0;
+    border: 1px solid #64748b;
+  }
+
+  /* KaiOS Device Layout */
+  .kaios-device-container {
+    display: grid;
+    grid-template-columns: min-content 1fr;
+    gap: 2rem;
+    align-items: start;
+    justify-content: center;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  /* KaiOS Phone Body */
+  .kaios-device-body {
+    background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+    border: 3px solid #334155;
+    border-radius: 28px;
+    padding: 1rem 0.85rem 1.25rem 0.85rem;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), inset 0 2px 4px rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 344px;
+    box-sizing: border-box;
+  }
+
+  .device-top-bezel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .earpiece-speaker {
+    width: 48px;
+    height: 4px;
+    background-color: #475569;
+    border-radius: 4px;
+  }
+
+  .device-brand-text {
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: #94a3b8;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* Exact 320x240 Pixel Screen Viewport */
+  .kaios-screen-viewport {
+    width: 320px;
+    height: 240px;
+    background-color: #022c22;
+    border: 2px solid #047857;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.6);
+    user-select: none;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  /* KaiOS Status Bar (320px wide) */
+  .kaios-status-bar {
+    height: 18px;
+    background-color: #064e3b;
+    border-bottom: 1px solid #047857;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 6px;
+    font-size: 0.62rem;
+    color: #a7f3d0;
+    font-weight: 700;
+  }
+
+  /* KaiOS Game Canvas inside 320x240 */
+  .kaios-game-screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 4px 6px;
+    box-sizing: border-box;
+    background: radial-gradient(circle at 50% 50%, #064e3b 0%, #022c22 100%);
+  }
+
+  /* Bot Bar inside 320x240 */
+  .kaios-bot-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: rgba(15, 23, 42, 0.6);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+  }
+
+  .kaios-avatar { font-size: 0.8rem; }
+  .kaios-bot-name { color: #fef08a; font-weight: 700; }
+  .kaios-turn-badge {
+    background-color: #1e293b;
+    color: #94a3b8;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.6rem;
+    font-weight: 800;
+  }
+  .kaios-turn-badge.turn-active { background-color: #0284c7; color: #fff; }
+
+  /* Table Center Area inside 320x240 */
+  .kaios-table-center {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 4px 0;
+  }
+
+  .kaios-market-btn {
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .kaios-card-back-icon {
+    width: 44px;
+    height: 60px;
+    background: linear-gradient(135deg, #1e3a8a 0%, #1e1b4b 100%);
+    border: 1.5px solid #3b82f6;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #60a5fa;
+    font-weight: 900;
+    font-size: 0.6rem;
+  }
+
+  .kaios-market-count {
+    font-size: 0.6rem;
+    color: #a7f3d0;
+    margin-top: 2px;
+    font-weight: 600;
+  }
+
+  .kaios-top-card-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .kaios-card {
+    width: 44px;
+    height: 60px;
+    background-color: #ffffff;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px;
+    box-sizing: border-box;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+  }
+
+  .kaios-card-num { font-weight: 900; font-size: 0.7rem; line-height: 1; }
+  .kaios-card-sym { font-size: 1.1rem; line-height: 1; }
+  .kaios-card-label { font-size: 0.6rem; color: #a7f3d0; margin-top: 2px; font-weight: 600; }
+
+  .kaios-status-callouts {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-width: 90px;
+  }
+
+  .kaios-suit-badge {
+    background-color: #3b0764;
+    color: #f5d0fe;
+    border: 1px solid #a855f7;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 0.58rem;
+    font-weight: 800;
+  }
+
+  .kaios-pick-badge {
+    background-color: #7f1d1d;
+    color: #fecaca;
+    border: 1px solid #ef4444;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 0.58rem;
+    font-weight: 800;
+  }
+
+  /* Player Hand Scroll in 320x240 */
+  .kaios-player-hand-container {
+    background-color: rgba(15, 23, 42, 0.7);
+    border-radius: 4px;
+    padding: 3px;
+  }
+
+  .kaios-hand-scroll {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .kaios-hand-card {
+    min-width: 30px;
+    height: 42px;
+    background-color: #ffffff;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 3px;
+    padding: 1px 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    box-sizing: border-box;
+    flex-shrink: 0;
+  }
+
+  .kaios-hand-card.focused {
+    border-color: #f59e0b;
+    outline: 2px solid #fbbf24;
+    transform: translateY(-2px);
+  }
+
+  .kaios-hand-card.disabled {
+    opacity: 0.45;
+  }
+
+  .kaios-mini-num { font-weight: 900; font-size: 0.6rem; line-height: 1; }
+  .kaios-mini-sym { font-size: 0.75rem; line-height: 1; }
+
+  /* Bottom Softkey Bar inside 320x240 */
+  .kaios-softkey-bar {
+    height: 20px;
+    background-color: #0f172a;
+    border-top: 1px solid #334155;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 4px;
+  }
+
+  .softkey {
+    background: transparent;
+    border: none;
+    color: #38bdf8;
+    font-size: 0.62rem;
+    font-weight: 800;
+    cursor: pointer;
+    padding: 1px 4px;
+  }
+  .softkey.center { color: #fef08a; }
+
+  /* Physical Phone Keypad Below Screen */
+  .kaios-keypad {
+    width: 320px;
+    margin-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .keypad-softkeys-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 0.5rem;
+  }
+
+  .keypad-btn {
+    background-color: #334155;
+    color: #f8fafc;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    padding: 0.4rem 0.85rem;
+    font-weight: 800;
+    font-size: 0.72rem;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .keypad-btn:active { transform: translateY(1px); }
+  .keypad-btn.call-btn { background-color: #16a34a; border-color: #22c55e; }
+
+  /* D-Pad Layout */
+  .dpad-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    margin: 0.2rem 0;
+  }
+
+  .dpad-middle-row {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .dpad-btn {
+    width: 44px;
+    height: 32px;
+    background-color: #334155;
+    color: #38bdf8;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    font-weight: 900;
+    font-size: 0.75rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dpad-btn.center {
+    background-color: #0284c7;
+    color: #fff;
+    border-color: #38bdf8;
+    width: 50px;
+    height: 34px;
+  }
+
+  /* Numeric Keypad Grid */
+  .num-keypad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.4rem;
+  }
+
+  .num-btn {
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 0.4rem 0.2rem;
+    color: #f8fafc;
+    font-weight: 800;
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+  }
+
+  .num-btn .sub {
+    font-size: 0.55rem;
+    color: #94a3b8;
+    margin-top: 2px;
+    font-weight: 500;
+  }
+
+  /* KaiOS Info Specs Panel */
+  .kaios-info-panel {
+    background-color: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 16px;
+    padding: 1.5rem;
+  }
+
+  .info-badge {
+    display: inline-block;
+    background-color: #0284c7;
+    color: #fff;
+    padding: 0.25rem 0.6rem;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    margin-bottom: 0.5rem;
+  }
+
+  .kaios-info-panel h3 { margin-top: 0; color: #f8fafc; }
+  .kaios-info-panel p { color: #cbd5e1; font-size: 0.85rem; line-height: 1.5; }
+
+  .controls-guide h4 { color: #38bdf8; font-size: 0.85rem; margin-bottom: 0.5rem; }
+  .controls-guide ul { margin: 0; padding-left: 1.25rem; color: #94a3b8; font-size: 0.8rem; line-height: 1.6; }
 </style>
