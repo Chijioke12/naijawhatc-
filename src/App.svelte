@@ -672,13 +672,13 @@
                 {@const total = gameState.human.hand.length}
                 {@const mid = (total - 1) / 2}
                 {@const offset = idx - mid}
-                {@const rotZ = isFocused ? 0 : offset * 2.2}
+                {@const rotZ = isFocused ? 0 : offset * 2.0}
                 {@const overlap = total > 8 ? -22 : total > 5 ? -16 : -11}
                 {@const shiftX = isAnyFocused
                   ? (idx < kaiosSelectedCardIndex ? -8 : idx > kaiosSelectedCardIndex ? 18 : 0)
                   : 0}
-                {@const transY = isFocused ? -28 : -Math.abs(offset) * 0.8}
-                {@const scale = isFocused ? 1.15 : 1}
+                {@const transY = isFocused ? -10 : -Math.abs(offset) * 0.6}
+                {@const scale = isFocused ? 1.08 : 1}
                 {@const zIndex = isFocused ? 50 : idx + 1}
                 <div
                   class="hand-card-wrapper"
@@ -703,7 +703,7 @@
           </div>
 
           <!-- In-Game Bottom Softkeys Bar -->
-          <div class="softkey-bar">
+          <div class="softkey-bar in-game-softkeys">
             <button class="softkey left" on:click={handleOpenPauseMenu}>
               MENU
             </button>
@@ -727,10 +727,7 @@
         {#if showPauseModal}
           <div class="pause-modal-backdrop">
             <div class="pause-modal">
-              <h3 class="pause-title">
-                <span>GAME PAUSED</span>
-                <img src={ICON_PAUSE} alt="Paused" class="modal-title-icon-img" />
-              </h3>
+              <h3 class="pause-title">GAME PAUSED</h3>
               <div class="pause-options-list">
                 {#each pauseOptions as opt, idx}
                   <button
@@ -742,7 +739,7 @@
                   </button>
                 {/each}
               </div>
-              <div class="softkey-bar">
+              <div class="softkey-bar modal-softkeys">
                 <button class="softkey left" on:click={handleResumeGame}>RESUME</button>
                 <button class="softkey right" on:click={() => handlePauseOptionSelect(pauseSelectedIndex)}>SELECT</button>
               </div>
@@ -776,18 +773,14 @@
         {#if gameState.isGameOver}
           <div class="gameover-modal-backdrop">
             <div class="gameover-modal">
-              <h2>
+              <h2 class="gameover-title">
                 {#if gameState.winnerId === 'You'}
-                  <img src={ICON_TROPHY} alt="Victory" class="gameover-title-icon-img" />
-                  <span>YOU WIN!</span>
-                  <img src={ICON_TROPHY} alt="Victory" class="gameover-title-icon-img" />
+                  YOU WIN!
                 {:else}
-                  <img src={ICON_ROBOT} alt="Defeat" class="gameover-title-icon-img" />
-                  <span>CPU WINS!</span>
-                  <img src={ICON_ROBOT} alt="Defeat" class="gameover-title-icon-img" />
+                  CPU WINS!
                 {/if}
               </h2>
-              <p>Your Score: <strong>{gameState.human.score}</strong> | Bot Score: <strong>{gameState.bot.score}</strong></p>
+              <p class="gameover-scores">Your Score: <strong>{gameState.human.score}</strong> | Bot Score: <strong>{gameState.bot.score}</strong></p>
               <div class="gameover-softkeys">
                 <button class="modal-btn" on:click={handleStartNewGame}>START AGAIN (LSK)</button>
                 <button class="modal-btn secondary" on:click={() => { showPauseModal = false; currentScreen = 'MAIN_MENU'; }}>MENU (RSK)</button>
@@ -854,55 +847,55 @@
     width: 100%;
     height: 100%;
     background-color: #064e3b;
-    padding: 6px;
+    padding: 3px;
     box-sizing: border-box;
   }
 
   .gold-border-frame {
     width: 100%;
     height: 100%;
-    border: 3px solid #d97706;
+    border: 2.5px solid #d97706;
     outline: 1px solid #facc15;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 10px;
+    padding: 4px 8px;
     background: radial-gradient(circle at 50% 40%, #065f46 0%, #022c22 100%);
   }
 
   .menu-title-area {
     text-align: center;
-    margin-top: 2px;
+    margin-top: 0px;
   }
 
   .game-title {
-    font-size: 1.55rem;
+    font-size: 1.25rem;
     color: #facc15;
     margin: 0;
-    line-height: 1;
+    line-height: 1.1;
     text-shadow: 2px 2px 0px #000, -1px -1px 0 #92400e;
     letter-spacing: 0.05em;
   }
 
   .game-subtitle {
-    font-size: 0.62rem;
+    font-size: 0.52rem;
     color: #e2e8f0;
-    margin: 2px 0 0 0;
+    margin: 1px 0 0 0;
     letter-spacing: 0.12em;
     font-weight: 700;
   }
 
   .engine-badge {
-    font-size: 0.45rem;
-    padding: 2px 6px;
-    border-radius: 4px;
+    font-size: 0.42rem;
+    padding: 1.5px 5px;
+    border-radius: 3px;
     background-color: rgba(14, 116, 144, 0.4);
     color: #67e8f9;
     border: 1px solid #06b6d4;
-    margin: 4px auto 0 auto;
-    letter-spacing: 0.4px;
+    margin: 2px auto 0 auto;
+    letter-spacing: 0.3px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -917,58 +910,59 @@
   }
 
   .badge-icon-img {
-    width: 9px;
-    height: 9px;
+    width: 8px;
+    height: 8px;
     display: inline-block;
     vertical-align: middle;
   }
 
   .banter-icon-img {
-    width: 11px;
-    height: 11px;
+    width: 10px;
+    height: 10px;
     display: inline-block;
     vertical-align: middle;
     margin-right: 3px;
   }
 
   .pick-icon-img {
-    width: 11px;
-    height: 11px;
+    width: 10px;
+    height: 10px;
     display: inline-block;
     vertical-align: middle;
     margin-right: 3px;
   }
 
   .modal-title-icon-img {
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     display: inline-block;
     vertical-align: middle;
-    margin-left: 5px;
+    margin-left: 4px;
   }
 
   .gameover-title-icon-img {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     display: inline-block;
     vertical-align: middle;
-    margin: 0 4px;
+    margin: 0 3px;
   }
 
   .menu-items-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    width: 82%;
+    gap: 3.5px;
+    width: 84%;
+    margin: 1px 0;
   }
 
   .menu-option-btn {
     background-color: #0f172a;
     border: 1.5px solid #334155;
-    border-radius: 6px;
+    border-radius: 5px;
     color: #f8fafc;
-    padding: 5px 0;
-    font-size: 0.82rem;
+    padding: 3px 0;
+    font-size: 0.74rem;
     font-weight: 800;
     letter-spacing: 0.05em;
     cursor: pointer;
@@ -977,15 +971,16 @@
 
   .menu-option-btn.selected {
     background-color: #1e293b;
-    border: 2px solid #facc15;
+    border: 1.5px solid #facc15;
     color: #facc15;
     box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
   }
 
   .menu-prompt-text {
-    font-size: 0.58rem;
+    font-size: 0.52rem;
     color: #94a3b8;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
+    margin-bottom: 1px;
   }
 
   /* Shared Softkey Bar */
@@ -998,7 +993,7 @@
     box-sizing: border-box;
     position: relative;
     z-index: 40;
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.45);
     border-radius: 3px;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
   }
@@ -1007,11 +1002,12 @@
     background: transparent;
     border: none;
     color: #facc15;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-weight: 900;
     letter-spacing: 0.05em;
     cursor: pointer;
     text-shadow: 1px 1px 0 #000;
+    padding: 0;
   }
 
   /* OVERLAY SCREENS (How to play & Settings) */
@@ -1551,25 +1547,25 @@
   .pause-modal {
     background: radial-gradient(circle at 50% 40%, #0f172a 0%, #020617 100%);
     border: 2px solid #facc15;
-    border-radius: 8px;
-    padding: 10px 12px;
-    width: 230px;
+    border-radius: 6px;
+    padding: 6px 10px;
+    width: 200px;
     text-align: center;
     box-shadow: 0 8px 20px rgba(0,0,0,0.9);
   }
 
   .pause-title {
     color: #facc15;
-    font-size: 0.95rem;
-    margin: 0 0 8px 0;
+    font-size: 0.82rem;
+    margin: 0 0 5px 0;
     text-shadow: 1px 1px 2px #000;
   }
 
   .pause-options-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin-bottom: 8px;
+    gap: 4px;
+    margin-bottom: 6px;
   }
 
   .pause-option-btn {
@@ -1577,9 +1573,9 @@
     border: 1.5px solid #334155;
     color: #cbd5e1;
     font-weight: 800;
-    font-size: 0.72rem;
-    padding: 6px;
-    border-radius: 6px;
+    font-size: 0.68rem;
+    padding: 4px;
+    border-radius: 5px;
     cursor: pointer;
     text-shadow: 1px 1px 1px #000;
   }
@@ -1589,6 +1585,11 @@
     border-color: #facc15;
     color: #ffffff;
     box-shadow: 0 0 8px rgba(250, 204, 21, 0.5);
+  }
+
+  .modal-softkeys {
+    padding: 1px 4px;
+    background: rgba(0, 0, 0, 0.6);
   }
 
   /* WHOT Suit Modal */
@@ -1605,34 +1606,34 @@
   .whot-suit-modal {
     background-color: #0f172a;
     border: 2px solid #facc15;
-    border-radius: 8px;
-    padding: 8px 12px;
-    width: 260px;
+    border-radius: 6px;
+    padding: 6px 8px;
+    width: 230px;
     text-align: center;
   }
 
   .whot-suit-modal h3 {
     color: #facc15;
-    font-size: 0.85rem;
-    margin: 0 0 6px 0;
+    font-size: 0.78rem;
+    margin: 0 0 4px 0;
   }
 
   .suits-grid {
     display: flex;
     justify-content: space-around;
-    gap: 4px;
+    gap: 3px;
   }
 
   .suit-select-btn {
     background-color: #1e293b;
     border: 1px solid #334155;
-    border-radius: 6px;
-    padding: 4px;
+    border-radius: 5px;
+    padding: 3px;
     display: flex;
     flex-direction: column;
     align-items: center;
     cursor: pointer;
-    width: 44px;
+    width: 40px;
   }
 
   .suit-select-btn.focused {
@@ -1642,19 +1643,19 @@
 
   .suit-key-num {
     color: #facc15;
-    font-size: 0.6rem;
+    font-size: 0.55rem;
     font-weight: 900;
   }
 
   .modal-suit-icon, .modal-suit-img {
-    width: 22px;
-    height: 22px;
-    margin: 2px 0;
+    width: 18px;
+    height: 18px;
+    margin: 1px 0;
   }
 
   .suit-name-text {
     color: #f8fafc;
-    font-size: 0.5rem;
+    font-size: 0.48rem;
     font-weight: 700;
   }
 
@@ -1662,28 +1663,28 @@
   .gameover-modal {
     background-color: #0f172a;
     border: 2px solid #facc15;
-    border-radius: 8px;
-    padding: 12px;
-    width: 250px;
+    border-radius: 6px;
+    padding: 8px 10px;
+    width: 220px;
     text-align: center;
     color: #f8fafc;
   }
 
   .gameover-modal h2 {
     color: #facc15;
-    font-size: 1.15rem;
-    margin: 0 0 6px 0;
+    font-size: 1rem;
+    margin: 0 0 4px 0;
   }
 
   .gameover-modal p {
-    font-size: 0.72rem;
-    margin: 4px 0 10px 0;
+    font-size: 0.65rem;
+    margin: 2px 0 8px 0;
   }
 
   .gameover-softkeys {
     display: flex;
     justify-content: space-around;
-    gap: 8px;
+    gap: 6px;
   }
 
   .modal-btn {
@@ -1691,8 +1692,8 @@
     color: #fff;
     border: none;
     border-radius: 4px;
-    padding: 5px 10px;
-    font-size: 0.65rem;
+    padding: 4px 8px;
+    font-size: 0.62rem;
     font-weight: 900;
   }
 
