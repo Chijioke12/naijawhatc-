@@ -61,8 +61,6 @@ export function cardScoreValue(card: Card): number {
   return card.number;
 }
 
-export const IS_CPP_ENGINE_DISABLED = true;
-
 // C++ Engine Wrapper
 export class CppWhotGameEngine {
   public humanHand: Card[] = [];
@@ -72,8 +70,8 @@ export class CppWhotGameEngine {
   public requestedSuit: Suit | 'none' = 'none';
   public pendingPickCount: number = 0;
   public currentTurn: number = 0; // 0 = Human, 1 = Bot
-  public isGameOver: boolean = true;
-  public winnerId: string = 'ENGINE_DISABLED';
+  public isGameOver: boolean = false;
+  public winnerId: string = '';
   public logs: string[] = [];
   public settings: GameSettings;
 
@@ -91,21 +89,6 @@ export class CppWhotGameEngine {
   }
 
   public startNewGame(): void {
-    if (IS_CPP_ENGINE_DISABLED) {
-      this.humanHand = [];
-      this.botHand = [];
-      this.marketPile = [];
-      this.playedPile = [];
-      this.isGameOver = true;
-      this.winnerId = 'ENGINE_DISABLED';
-      this.logs = [
-        '❌ TS FALLBACK ENGINE IS DISABLED (src/cppEngine.ts)!',
-        'Looking for compiled C++ Emscripten binary (public/whot_engine_asm.js)...',
-        'FAILED: Binary not found! AI Studio dev environment does not have Emscripten (emcc) installed to compile C++ source code.',
-        'Game cannot start without compiled C++ binary or TS fallback engine.'
-      ];
-      return;
-    }
     const deckConfig: { suit: Suit; numbers: number[] }[] = [
       { suit: 'circle', numbers: [1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14] },
       { suit: 'triangle', numbers: [1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14] },

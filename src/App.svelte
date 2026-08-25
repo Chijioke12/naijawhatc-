@@ -20,6 +20,28 @@
     emptyMarketEnds: false
   };
 
+  // Active Engine Detection
+  let isEmscriptenCppActive = false;
+  let activeEngineLabel = 'AI STUDIO DEV (TS MIRROR)';
+
+  async function checkActiveEngine() {
+    try {
+      const res = await fetch('./whot_engine_asm.js', { method: 'GET' });
+      const contentType = res.headers.get('content-type') || '';
+      // SPA servers (like Vite in dev mode) return 200 with index.html for missing files
+      if (res.ok && !contentType.includes('html') && (contentType.includes('javascript') || contentType.includes('ecmascript'))) {
+        isEmscriptenCppActive = true;
+        activeEngineLabel = 'PROD: EMSCRIPTEN C++ BINARY';
+      } else {
+        isEmscriptenCppActive = false;
+        activeEngineLabel = 'AI STUDIO DEV (TS MIRROR)';
+      }
+    } catch {
+      isEmscriptenCppActive = false;
+      activeEngineLabel = 'AI STUDIO DEV (TS MIRROR)';
+    }
+  }
+
   // Game Engine State
   let engine = new CppWhotGameEngine({
     sfx: settings.sfx,
@@ -281,6 +303,7 @@
 
   onMount(() => {
     window.addEventListener('keydown', handleKeyDown);
+    checkActiveEngine();
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
@@ -298,6 +321,13 @@
           <div class="menu-title-area">
             <h1 class="game-title">NAIJA WHOT</h1>
             <p class="game-subtitle">CLASSIC KAIOS EDITION</p>
+            <div class="engine-badge" class:prod={isEmscriptenCppActive}>
+              {#if isEmscriptenCppActive}
+                ⚙️ {activeEngineLabel}
+              {:else}
+                ⚡ {activeEngineLabel}
+              {/if}
+            </div>
           </div>
 
           <div class="menu-items-list">
@@ -500,27 +530,16 @@
           </div>
         {/if}
 
-        <!-- Game Over / Disabled Popup Modal -->
+        <!-- Game Over Popup Modal -->
         {#if gameState.isGameOver}
           <div class="gameover-modal-backdrop">
             <div class="gameover-modal">
-              {#if gameState.winnerId === 'ENGINE_DISABLED'}
-                <h2 style="color: #ef4444; font-size: 0.95rem;">TS ENGINE DISABLED</h2>
-                <p style="font-size: 0.58rem; color: #fecaca; text-align: left; margin: 6px 0;">
-                  ⚠️ C++ Fallback Engine (src/cppEngine.ts) was explicitly disabled.<br/><br/>
-                  The C++ Emscripten binary (whot_engine_asm.js) is missing in this dev container because Emscripten (emcc) compiler is not installed.
-                </p>
-                <div class="gameover-softkeys">
-                  <button class="modal-btn secondary" on:click={() => currentScreen = 'MAIN_MENU'}>MENU (RSK)</button>
-                </div>
-              {:else}
-                <h2>{gameState.winnerId === 'You' ? 'YOU WIN! 🎉' : 'CPU WINS! 🤖'}</h2>
-                <p>Your Score: <strong>{gameState.human.score}</strong> | Bot Score: <strong>{gameState.bot.score}</strong></p>
-                <div class="gameover-softkeys">
-                  <button class="modal-btn" on:click={handleStartNewGame}>REPLAY (LSK)</button>
-                  <button class="modal-btn secondary" on:click={() => currentScreen = 'MAIN_MENU'}>MENU (RSK)</button>
-                </div>
-              {/if}
+              <h2>{gameState.winnerId === 'You' ? 'YOU WIN! 🎉' : 'CPU WINS! 🤖'}</h2>
+              <p>Your Score: <strong>{gameState.human.score}</strong> | Bot Score: <strong>{gameState.bot.score}</strong></p>
+              <div class="gameover-softkeys">
+                <button class="modal-btn" on:click={handleStartNewGame}>REPLAY (LSK)</button>
+                <button class="modal-btn secondary" on:click={() => currentScreen = 'MAIN_MENU'}>MENU (RSK)</button>
+              </div>
             </div>
           </div>
         {/if}
@@ -621,6 +640,25 @@
     margin: 2px 0 0 0;
     letter-spacing: 0.12em;
     font-weight: 700;
+  }
+
+  .engine-badge {
+    font-size: 0.45rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background-color: rgba(14, 116, 144, 0.4);
+    color: #67e8f9;
+    border: 1px solid #06b6d4;
+    margin: 4px auto 0 auto;
+    letter-spacing: 0.4px;
+    display: inline-block;
+    font-family: monospace, system-ui;
+    font-weight: 600;
+  }
+  .engine-badge.prod {
+    background-color: rgba(21, 128, 61, 0.4);
+    color: #86efac;
+    border: 1px solid #22c55e;
   }
 
   .menu-items-list {
