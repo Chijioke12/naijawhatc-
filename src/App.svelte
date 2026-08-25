@@ -500,16 +500,27 @@
           </div>
         {/if}
 
-        <!-- Game Over Popup Modal -->
+        <!-- Game Over / Disabled Popup Modal -->
         {#if gameState.isGameOver}
           <div class="gameover-modal-backdrop">
             <div class="gameover-modal">
-              <h2>{gameState.winnerId === 'You' ? 'YOU WIN! 🎉' : 'CPU WINS! 🤖'}</h2>
-              <p>Your Score: <strong>{gameState.human.score}</strong> | Bot Score: <strong>{gameState.bot.score}</strong></p>
-              <div class="gameover-softkeys">
-                <button class="modal-btn" on:click={handleStartNewGame}>REPLAY (LSK)</button>
-                <button class="modal-btn secondary" on:click={() => currentScreen = 'MAIN_MENU'}>MENU (RSK)</button>
-              </div>
+              {#if gameState.winnerId === 'ENGINE_DISABLED'}
+                <h2 style="color: #ef4444; font-size: 0.95rem;">TS ENGINE DISABLED</h2>
+                <p style="font-size: 0.58rem; color: #fecaca; text-align: left; margin: 6px 0;">
+                  ⚠️ C++ Fallback Engine (src/cppEngine.ts) was explicitly disabled.<br/><br/>
+                  The C++ Emscripten binary (whot_engine_asm.js) is missing in this dev container because Emscripten (emcc) compiler is not installed.
+                </p>
+                <div class="gameover-softkeys">
+                  <button class="modal-btn secondary" on:click={() => currentScreen = 'MAIN_MENU'}>MENU (RSK)</button>
+                </div>
+              {:else}
+                <h2>{gameState.winnerId === 'You' ? 'YOU WIN! 🎉' : 'CPU WINS! 🤖'}</h2>
+                <p>Your Score: <strong>{gameState.human.score}</strong> | Bot Score: <strong>{gameState.bot.score}</strong></p>
+                <div class="gameover-softkeys">
+                  <button class="modal-btn" on:click={handleStartNewGame}>REPLAY (LSK)</button>
+                  <button class="modal-btn secondary" on:click={() => currentScreen = 'MAIN_MENU'}>MENU (RSK)</button>
+                </div>
+              {/if}
             </div>
           </div>
         {/if}
