@@ -43,7 +43,7 @@ export interface GameStateJSON {
 }
 
 // Map suit to symbol
-export function suitToSymbol(suit: Suit): string {
+export function suitToSymbol(suit: Suit | string): string {
   switch (suit) {
     case 'circle': return '●';
     case 'triangle': return '▲';

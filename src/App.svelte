@@ -343,7 +343,7 @@
               {#if gameState.deck.requestedSuit !== 'none'}
                 <div class="status-alert suit-alert">
                   <span class="alert-icon">👑</span>
-                  <span>Requested Suit: <strong>{gameState.deck.requestedSuit.toUpperCase()} {suitToSymbol(gameState.deck.requestedSuit as Suit)}</strong></span>
+                  <span>Requested Suit: <strong>{gameState.deck.requestedSuit.toUpperCase()} {suitToSymbol(gameState.deck.requestedSuit)}</strong></span>
                 </div>
               {/if}
 
@@ -364,7 +364,7 @@
                 <span class="player-name">You (Player)</span>
                 <span class="player-stats">{gameState.human.cardCount} cards in hand | Score: {gameState.human.score}</span>
               </div>
-              <button className="draw-btn" on:click={handleDrawMarket} disabled={gameState.currentTurnPlayerIndex !== 0 || gameState.isGameOver}>
+              <button class="draw-btn" on:click={handleDrawMarket} disabled={gameState.currentTurnPlayerIndex !== 0 || gameState.isGameOver}>
                 📥 Draw Card
               </button>
             </div>
@@ -466,7 +466,7 @@
                 <div class="kaios-status-callouts">
                   {#if gameState.deck.requestedSuit !== 'none'}
                     <div class="kaios-suit-badge">
-                      👑 {gameState.deck.requestedSuit.toUpperCase()} {suitToSymbol(gameState.deck.requestedSuit as Suit)}
+                      👑 {gameState.deck.requestedSuit.toUpperCase()} {suitToSymbol(gameState.deck.requestedSuit)}
                     </div>
                   {/if}
                   {#if gameState.deck.pendingPickCount > 0}

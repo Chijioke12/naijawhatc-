@@ -7,7 +7,7 @@
     "generate:assets": "node scripts/generate_whot_assets.js",
     "prebuild": "npm run generate:assets",
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "npm run generate:assets && node scripts/build_prod.js",
+    "build": "npm run generate:assets && vite build",
     "postbuild": "node scripts/bundle_kaios.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
