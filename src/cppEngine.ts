@@ -169,13 +169,13 @@ export class CppWhotGameEngine {
     this.winnerId = '';
     this.logs = [];
 
-    // Deal 6 cards
+    // Deal 6 cards to each player
     for (let i = 0; i < 6; i++) {
       if (this.marketPile.length > 0) this.humanHand.push(this.marketPile.pop()!);
       if (this.marketPile.length > 0) this.botHand.push(this.marketPile.pop()!);
     }
 
-    // Top card
+    // Top card onto played pile (ensure it's not empty)
     if (this.marketPile.length > 0) {
       this.playedPile.push(this.marketPile.pop()!);
     }
@@ -198,6 +198,22 @@ export class CppWhotGameEngine {
           this.isGameOver = !!state.isGameOver;
           this.winnerId = state.winnerId || '';
           this.logs = state.logs || [];
+
+          if (state.deck) {
+            if (state.deck.topCard) {
+              this.playedPile = [state.deck.topCard];
+            }
+            if (typeof state.deck.marketCount === 'number') {
+              const needed = state.deck.marketCount;
+              if (this.marketPile.length !== needed) {
+                this.marketPile = new Array(needed).fill(null).map((_, i) => ({
+                  id: `market_${i}`,
+                  suit: 'circle',
+                  number: 1
+                }));
+              }
+            }
+          }
         }
       }
     } catch (e) {
@@ -216,7 +232,15 @@ export class CppWhotGameEngine {
   public canPlayCard(card: Card): boolean {
     const top = this.getTopCard();
     if (!top) return true;
-    if (card.suit === 'whot') return true;
+
+    // Penalty defense check
+    if (this.pendingPickCount > 0) {
+      if (top.number === 2 && card.number === 2) return true;
+      if (top.number === 5 && card.number === 5 && this.settings.pick3) return true;
+      return false;
+    }
+
+    if (card.suit === 'whot' || card.number === 20) return true;
 
     if (this.requestedSuit !== 'none') {
       return card.suit === this.requestedSuit;

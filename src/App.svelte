@@ -195,6 +195,17 @@
     else if (idx === 2) { showPauseModal = false; currentScreen = 'MAIN_MENU'; }
   }
 
+  // Bot Execution Timer Guard
+  let botTurnTimer: any = null;
+
+  function scheduleBotTurn(delayMs = 800) {
+    if (botTurnTimer) clearTimeout(botTurnTimer);
+    botTurnTimer = setTimeout(() => {
+      botTurnTimer = null;
+      executeBotTurn();
+    }, delayMs);
+  }
+
   function handlePlayCard(index: number) {
     if (gameState.currentTurnPlayerIndex !== 0 || gameState.isGameOver) return;
     if (index < 0 || index >= gameState.human.hand.length) return;
@@ -218,7 +229,7 @@
       if (num === 1) playSound('sfx_hold_on');
       else if (num === 2) playSound('sfx_pick_two');
       else if (num === 5 && settings.pick3) playSound('sfx_pick_three');
-      else if (num === 8 && settings.suspend) playSound('sfx_suspension');
+      else if (num === 8 && settings.suspend) playSound('sfx_suspend');
       else if (num === 14) playSound('sfx_gen_market');
       else playSound('sfx_card_play');
 
@@ -232,7 +243,7 @@
         if (gameState.winnerId === 'You') playSound('sfx_win');
         else playSound('sfx_lose');
       } else if (gameState.currentTurnPlayerIndex === 1) {
-        setTimeout(executeBotTurn, 850);
+        scheduleBotTurn(850);
       }
     } else {
       playSound('sfx_invalid_move');
@@ -254,7 +265,7 @@
         if (gameState.winnerId === 'You') playSound('sfx_win');
         else playSound('sfx_lose');
       } else if (gameState.currentTurnPlayerIndex === 1) {
-        setTimeout(executeBotTurn, 850);
+        scheduleBotTurn(850);
       }
     } else {
       playSound('sfx_invalid_move');
@@ -269,7 +280,7 @@
       playSound('sfx_card_draw');
       updateState();
       if (gameState.currentTurnPlayerIndex === 1 && !gameState.isGameOver) {
-        setTimeout(executeBotTurn, 850);
+        scheduleBotTurn(850);
       }
     } else {
       playSound('sfx_invalid_move');
@@ -277,6 +288,10 @@
   }
 
   function executeBotTurn() {
+    if (botTurnTimer) {
+      clearTimeout(botTurnTimer);
+      botTurnTimer = null;
+    }
     if (gameState.isGameOver || gameState.currentTurnPlayerIndex !== 1) return;
     const topCardBefore = engine.getTopCard();
 
@@ -291,14 +306,14 @@
 
     if (res.success) {
       const topCardAfter = engine.getTopCard();
-      if (topCardAfter && topCardAfter !== topCardBefore) {
+      if (topCardAfter && (!topCardBefore || topCardAfter.id !== topCardBefore.id || topCardAfter.suit !== topCardBefore.suit || topCardAfter.number !== topCardBefore.number)) {
         playedCardFlipKey++;
         const num = topCardAfter.number;
         if (num === 20 || topCardAfter.suit === 'whot') playSound('sfx_whot_played');
         else if (num === 1) playSound('sfx_hold_on');
         else if (num === 2) playSound('sfx_pick_two');
         else if (num === 5 && settings.pick3) playSound('sfx_pick_three');
-        else if (num === 8 && settings.suspend) playSound('sfx_suspension');
+        else if (num === 8 && settings.suspend) playSound('sfx_suspend');
         else if (num === 14) playSound('sfx_gen_market');
         else playSound('sfx_card_play');
 
@@ -312,6 +327,19 @@
         if (gameState.winnerId === 'You') playSound('sfx_win');
         else playSound('sfx_lose');
       } else if (gameState.currentTurnPlayerIndex === 0) {
+        playSound('sfx_your_turn');
+      } else if (gameState.currentTurnPlayerIndex === 1) {
+        // Bot plays again on Hold On (1) or Suspend (8)
+        scheduleBotTurn(850);
+      }
+    } else {
+      // Safety auto-recovery: if bot failed move, force draw & pass turn
+      if (!gameState.isGameOver && gameState.currentTurnPlayerIndex === 1) {
+        if (engine.marketPile.length > 0) {
+          engine.botHand.push(engine.marketPile.pop()!);
+        }
+        engine.currentTurn = 0;
+        updateState();
         playSound('sfx_your_turn');
       }
     }
@@ -616,23 +644,24 @@
               <div class="market-label-text">MARKET: {gameState.deck.marketCount}</div>
             </div>
 
-            <!-- Top Played Card Stack 2.5D (Middle Center) with 3D Flip Land Animation -->
+            <!-- Top Played Card Stack (Middle Center - Place to play card) -->
             <div class="played-card-group">
               <div class="played-card-shadow-3d"></div>
               {#if gameState.deck.topCard}
                 {@const top = gameState.deck.topCard}
                 {#key playedCardFlipKey}
-                  <div class="played-card-flip-box">
-                    <div class="card-flip-inner played-card-flip-inner">
-                      <div class="card-face card-front">
-                        <img src={getCardImage(top.suit, top.number)} alt="Top Played Card" class="played-card-img card-3d" />
-                      </div>
-                      <div class="card-face card-back">
-                        <img src={getCardBackImage()} alt="Card Back" class="played-card-img card-3d" />
-                      </div>
-                    </div>
+                  <div class="played-card-box">
+                    <img
+                      src={getCardImage(top.suit, top.number)}
+                      alt="Top Played Card {top.suit} {top.number}"
+                      class="played-card-img card-top-active"
+                    />
                   </div>
                 {/key}
+              {:else}
+                <div class="played-card-placeholder">
+                  <span class="placeholder-text">DISCARD</span>
+                </div>
               {/if}
             </div>
 
@@ -1264,85 +1293,72 @@
 
   .played-card-group {
     position: relative;
-    transform-style: preserve-3d;
+    width: 46px;
+    height: 66px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .played-card-shadow-3d {
     position: absolute;
-    top: 6px;
-    left: 5px;
+    top: 5px;
+    left: 4px;
     width: 46px;
     height: 66px;
-    background-color: rgba(0,0,0,0.65);
+    background-color: rgba(0, 0, 0, 0.65);
     border-radius: 4px;
     filter: blur(4px);
-  }
-
-  .played-card-flip-box {
-    position: relative;
-    width: 46px;
-    height: 66px;
-    perspective: 800px;
-  }
-
-  /* Universal 3D Flip Card Styles */
-  .card-flip-inner {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    transform-style: preserve-3d;
-    transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-
-  .card-face {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    border-radius: 3.5px;
-  }
-
-  .card-face.card-front {
-    transform: rotateY(0deg);
-    z-index: 2;
-  }
-
-  .card-face.card-back {
-    transform: rotateY(180deg);
     z-index: 1;
   }
 
-  /* Played Card 3D Flip Land Animation */
-  .played-card-flip-inner {
-    animation: playedCardFlipLand 0.36s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  .played-card-box {
+    position: relative;
+    width: 46px;
+    height: 66px;
+    z-index: 10;
   }
 
-  @keyframes playedCardFlipLand {
-    0% {
-      transform: translate3d(0, -28px, 48px) rotateY(180deg) rotateX(30deg) rotateZ(12deg) scale(1.2);
-      opacity: 0.5;
-      filter: drop-shadow(0 14px 20px rgba(0, 0, 0, 0.85));
-    }
-    60% {
-      transform: translate3d(0, -4px, 18px) rotateY(0deg) rotateX(16deg) rotateZ(-2deg) scale(1.04);
-      opacity: 1;
-      filter: drop-shadow(-4px 8px 14px rgba(0, 0, 0, 0.75));
-    }
-    100% {
-      transform: translate3d(0, 0, 12px) rotateY(0deg) rotateX(14deg) rotateZ(-4deg) scale(1);
-      opacity: 1;
-      filter: drop-shadow(-3px 4px 10px rgba(0, 0, 0, 0.7));
-    }
-  }
-
-  .played-card-img.card-3d {
+  .played-card-img.card-top-active {
     width: 46px;
     height: 66px;
     border-radius: 3.5px;
-    box-shadow: -3px 4px 10px rgba(0,0,0,0.7);
-    border: 1px solid rgba(255,255,255,0.25);
+    box-shadow: -2px 3px 8px rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    display: block;
+    object-fit: contain;
+    animation: playedCardLand 0.24s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  }
+
+  .played-card-placeholder {
+    position: relative;
+    width: 46px;
+    height: 66px;
+    border: 1.5px dashed rgba(250, 204, 21, 0.6);
+    border-radius: 3.5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 5;
+  }
+
+  .placeholder-text {
+    font-size: 0.55rem;
+    font-weight: 900;
+    color: #facc15;
+    letter-spacing: 0.5px;
+  }
+
+  @keyframes playedCardLand {
+    0% {
+      transform: translateY(-16px) scale(1.12) rotate(-5deg);
+      opacity: 0.8;
+    }
+    100% {
+      transform: translateY(0) scale(1) rotate(-1.5deg);
+      opacity: 1;
+    }
   }
 
   /* Flying Market Draw 3D Card Animation */
